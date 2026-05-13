@@ -1,0 +1,8 @@
+bills.db
+bills.db.backup_*
+*.backup
+*.backup2
+*.backup_*
+*.broken
+*.old
+upload_server.py
