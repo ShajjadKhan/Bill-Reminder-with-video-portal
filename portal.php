@@ -85,11 +85,12 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
     $amounts = $_POST['amounts'] ?? [];
     $customer = $db->querySingle("SELECT name, mobile, billing_start_date FROM customers WHERE id=$customer_id", true);
     
-    $whatsapp_msg = "📢 *PAYMENT RECEIPT* 📢\n\n";
-    $whatsapp_msg .= "👤 *Customer:* {$customer['name']}\n";
-    $whatsapp_msg .= "📅 *Date:* " . date("Y-m-d H:i:s") . "\n";
-    $whatsapp_msg .= "👨‍💼 *Collected by:* {$_SESSION['fullname']}\n\n";
-    $whatsapp_msg .= "💰 *Payment Details:*\n";
+
+    $whatsapp_msg = "[PAYMENT RECEIPT]\n\n";
+    $whatsapp_msg .= "Customer: {$customer['name']}\n";
+    $whatsapp_msg .= "Date: " . date("Y-m-d H:i:s") . "\n";
+    $whatsapp_msg .= "Collected by: {$_SESSION['fullname']}\n\n";
+    $whatsapp_msg .= "Payment Details:\n";
     $total_paid = 0;
     
     foreach ($months as $index => $month) {
@@ -98,18 +99,18 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
             $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) 
                        VALUES ($customer_id, '$month', $amount, {$_SESSION['user_id']}, datetime('now'))");
             logAction($db, $_SESSION['user_id'], "COLLECTION", "Collected $amount SAR from {$customer['name']} for month: $month");
-            $whatsapp_msg .= "✅ " . date('F Y', strtotime($month)) . ": $amount SAR (PAID)\n";
+            $whatsapp_msg .= "- PAID: " . date('F Y', strtotime($month)) . ": $amount SAR\n";
             $total_paid += $amount;
         } elseif ($amount == 0) {
             $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) 
                        VALUES ($customer_id, '$month', 0, {$_SESSION['user_id']}, datetime('now'))");
             logAction($db, $_SESSION['user_id'], "WAIVE_MONTH", "Waived $month for {$customer['name']}");
-            $whatsapp_msg .= "⚠️ " . date('F Y', strtotime($month)) . ": WAIVED (0 SAR)\n";
+            $whatsapp_msg .= "- WAIVED: " . date('F Y', strtotime($month)) . ": 0 SAR\n";
         }
     }
     
-    $whatsapp_msg .= "\n💵 *Total paid today:* $total_paid SAR\n\n";
-    $whatsapp_msg .= "⏳ *Remaining Balance:*\n";
+    $whatsapp_msg .= "\nTotal paid today: $total_paid SAR\n\n";
+    $whatsapp_msg .= "Remaining Balance:\n";
     
     $start = new DateTime($customer['billing_start_date']);
     $now = new DateTime(date('Y-m-01'));
@@ -119,16 +120,17 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
         $collected = $db->querySingle("SELECT SUM(amount) FROM collections WHERE customer_id=$customer_id AND month_year='$month_year'");
         $due = 30 - ($collected ?: 0);
         if ($due > 0) {
-            $whatsapp_msg .= "❌ " . $dt->format('F Y') . ": $due SAR (UNPAID)\n";
+            $whatsapp_msg .= "- UNPAID: " . $dt->format('F Y') . ": $due SAR\n";
         }
     }
     
-    $whatsapp_msg .= "\n🎬 *Enjoy free movies:* http://10.12.14.16:8082\n\n";
-    $whatsapp_msg .= "🛠️ *Technical Support (24/7):*\n";
-    $whatsapp_msg .= "📞 Cyber Net: +966594266584\n";
-    $whatsapp_msg .= "📞 Riyad Hossain: +966546377863\n";
-    $whatsapp_msg .= "📞 Jahir Hossain: +966542349510\n\n";
-    $whatsapp_msg .= "Thank you for your payment! 🙏";
+    $whatsapp_msg .= "\nMovies: http://10.12.14.16:8082\n\n";
+    $whatsapp_msg .= "Technical Support (24/7):\n";
+    $whatsapp_msg .= "Tel: Cyber Net +966594266584\n";
+    $whatsapp_msg .= "Tel: Riyad Hossain +966546377863\n";
+    $whatsapp_msg .= "Tel: Jahir Hossain +966542349510\n\n";
+    $whatsapp_msg .= "Thank you for your payment!";
+
     
     $_SESSION['last_collection'] = [
         'name' => $customer['name'],
