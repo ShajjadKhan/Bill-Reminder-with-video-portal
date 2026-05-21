@@ -13,6 +13,25 @@ function isMaster() { return isset($_SESSION['role']) && $_SESSION['role'] == 'm
 function isAdmin() { return isset($_SESSION['role']) && $_SESSION['role'] == 'admin'; }
 function logAction($db, $user_id, $action, $details) { $db->exec("INSERT INTO audit_log (user_id, action, details, timestamp) VALUES ($user_id, '$action', '$details', datetime('now'))"); }
 
+function sendWhatsAppMessage($mobile, $message) {
+    $phone = ltrim($mobile, '0');
+    $chatId = "966" . $phone . "@c.us";
+    $url = "http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text";
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'X-API-Key: dev-admin-key'
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['chatId' => $chatId, 'text' => $message]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    return $result;
+}
+
 if (isset($_GET['logout'])) { session_destroy(); header('Location: portal.php'); exit; }
 if (isset($_POST['action']) && $_POST['action'] == 'login') {
     $user = $db->querySingle("SELECT * FROM users WHERE username = '" . SQLite3::escapeString($_POST['username']) . "'", true);
@@ -131,6 +150,8 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
     $whatsapp_msg .= "Tel: Jahir Hossain +966542349510\n\n";
     $whatsapp_msg .= "Thank you for your payment!";
     
+    sendWhatsAppMessage($customer['mobile'], $whatsapp_msg);
+    
     $_SESSION['last_collection'] = [
         'name' => $customer['name'],
         'mobile' => $customer['mobile'],
@@ -139,7 +160,7 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
         'datetime' => date('Y-m-d H:i:s'),
         'collector' => $_SESSION['fullname']
     ];
-    $_SESSION['msg'] = "Payment recorded successfully";
+    $_SESSION['msg'] = "Payment recorded successfully. WhatsApp confirmation sent.";
     header('Location: portal.php?page=collections');
     exit;
 }
@@ -278,7 +299,6 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
     return $unpaid;
 }
 
-// Include due_day in the query
 $pending_customers = [];
 $all_customers = $db->query("SELECT id, name, mobile, building, apartment, room, due_day, billing_start_date FROM customers WHERE status='active'");
 while ($cust = $all_customers->fetchArray(SQLITE3_ASSOC)) {
@@ -295,7 +315,6 @@ usort($pending_customers, function($a, $b) {
 
 $total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status='active'");
 
-// CASH BASIS: Use collected_date for dashboard
 $collected_count = $db->querySingle("SELECT COUNT(DISTINCT customer_id) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month' AND amount>0");
 $total_amount_collected = $db->querySingle("SELECT SUM(amount) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month'");
 $pending_count = $total_customers - $collected_count;
@@ -303,7 +322,6 @@ $pending_count = $total_customers - $collected_count;
 $customers = $db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
 $files = $db->query("SELECT * FROM files ORDER BY id DESC");
 
-// Audit log with user filter
 if ($filter_user > 0) {
     $audit_log = $db->query("SELECT l.*, u.fullname FROM audit_log l JOIN users u ON l.user_id=u.id WHERE l.user_id=$filter_user ORDER BY l.timestamp DESC LIMIT 500");
 } else {
@@ -373,7 +391,7 @@ $all_collections = $db->query("SELECT c.id, c.customer_id, cust.name as customer
 <div class="alert alert-success alert-dismissible fade show">
   <strong>Payment received from <?php echo $_SESSION['last_collection']['name']; ?>: <?php echo $_SESSION['last_collection']['amount']; ?> SAR</strong><br>
   Collected by: <?php echo $_SESSION['last_collection']['collector']; ?> on <?php echo $_SESSION['last_collection']['datetime']; ?>.<br>
-  <a href="https://wa.me/966<?php echo $_SESSION['last_collection']['mobile']; ?>?text=<?php echo urlencode($_SESSION['last_collection']['whatsapp_msg']); ?>" target="_blank" class="btn btn-sm whatsapp-btn mt-2"><i class="fab fa-whatsapp"></i> Send WhatsApp Confirmation</a>
+  WhatsApp confirmation sent automatically.
   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 <?php unset($_SESSION['last_collection']); endif; ?>
@@ -399,13 +417,13 @@ $all_collections = $db->query("SELECT c.id, c.customer_id, cust.name as customer
     <div class="col-md-3 col-6"><div class="card text-white bg-info stats-card shadow"><div class="card-body"><div class="d-flex justify-content-between align-items-center"><div><h6 class="card-title mb-0">Total Collected</h6><p class="display-6 mb-0 fw-bold"><?php echo number_format($total_amount_collected ?: 0, 2); ?> SAR</p></div><i class="fas fa-chart-line fa-2x opacity-50"></i></div></div></div></div>
 </div>
 <div class="card mb-3"><div class="card-body"><form method="get" class="row g-2"><input type="hidden" name="page" value="dashboard"><div class="col-8 col-md-4"><select name="stats_month" class="form-select"><?php for($i=0;$i<12;$i++){$m=date('Y-m',strtotime("-$i months"));$sel=($m==$display_month)?'selected':'';echo "<option value=\"$m\" $sel>".date('F Y',strtotime($m))."</option>";}?></select></div><div class="col-4 col-md-2"><button type="submit" class="btn btn-primary w-100">Show</button></div></form></div></div>
-<div class="card mb-3"><div class="card-header bg-secondary text-white"><h5 class="mb-0"><i class="fas fa-users"></i> Collections by Staff - <?php echo date("F Y", strtotime($display_month)); ?> (by collection date)</h5></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-dark"><tr><th><i class="fas fa-user-circle"></i> Staff Name</th><th class="text-end"><i class="fas fa-money-bill-wave"></i> Total Collected (SAR)</th><th class="text-center"><i class="fas fa-receipt"></i> Number of Collections</th><th class="text-center"><i class="fas fa-chart-line"></i> Average per Collection</th></tr></thead><tbody><?php $staff = $db->query("SELECT id, fullname FROM users ORDER BY fullname"); $grand_total = 0; $grand_count = 0; while($s = $staff->fetchArray(SQLITE3_ASSOC)): $total = $db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month' AND collected_by={$s['id']}"); $count = $db->querySingle("SELECT COUNT(*) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month' AND collected_by={$s['id']}"); $avg = $count > 0 ? round($total / $count, 2) : 0; $grand_total += $total; $grand_count += $count; ?><tr><td><strong><?php echo htmlspecialchars($s['fullname']); ?></strong></td><td class="text-end fw-bold text-success"><?php echo number_format($total, 2); ?> SAR</a></td><td class="text-center"><span class="badge bg-info"><?php echo $count; ?></span></td><td class="text-center"><?php echo number_format($avg, 2); ?> SAR</a></tr><?php endwhile; ?><tr class="table-secondary fw-bold"><tr><strong>TOTAL</strong></a></td><td class="text-end text-primary"><?php echo number_format($grand_total, 2); ?> SAR</a></td><td class="text-center"><span class="badge bg-dark"><?php echo $grand_count; ?></span></a></td><td class="text-center"><?php echo $grand_count > 0 ? number_format($grand_total / $grand_count, 2) : 0; ?> SAR</a></tr></tbody></table></div></div></div>
+<div class="card mb-3"><div class="card-header bg-secondary text-white"><h5 class="mb-0"><i class="fas fa-users"></i> Collections by Staff - <?php echo date("F Y", strtotime($display_month)); ?> (by collection date)</h5></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-dark"><tr><th><i class="fas fa-user-circle"></i> Staff Name</th><th class="text-end"><i class="fas fa-money-bill-wave"></i> Total Collected (SAR)</th><th class="text-center"><i class="fas fa-receipt"></i> Number of Collections</th><th class="text-center"><i class="fas fa-chart-line"></i> Average per Collection</th><tr></thead><tbody><?php $staff = $db->query("SELECT id, fullname FROM users ORDER BY fullname"); $grand_total = 0; $grand_count = 0; while($s = $staff->fetchArray(SQLITE3_ASSOC)): $total = $db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month' AND collected_by={$s['id']}"); $count = $db->querySingle("SELECT COUNT(*) FROM collections WHERE strftime('%Y-%m', collected_date) = '$display_month' AND collected_by={$s['id']}"); $avg = $count > 0 ? round($total / $count, 2) : 0; $grand_total += $total; $grand_count += $count; ?><tr><td><strong><?php echo htmlspecialchars($s['fullname']); ?></strong></td><td class="text-end fw-bold text-success"><?php echo number_format($total, 2); ?> SAR</td><td class="text-center"><span class="badge bg-info"><?php echo $count; ?></span></td><td class="text-center"><?php echo number_format($avg, 2); ?> SAR</td></tr><?php endwhile; ?><tr class="table-secondary fw-bold"><td><strong>TOTAL</strong></td><td class="text-end text-primary"><?php echo number_format($grand_total, 2); ?> SAR</td><td class="text-center"><span class="badge bg-dark"><?php echo $grand_count; ?></span></td><td class="text-center"><?php echo $grand_count > 0 ? number_format($grand_total / $grand_count, 2) : 0; ?> SAR</td></tr></tbody></table></div></div></div>
 <?php endif; ?>
 
 <!-- COLLECTIONS -->
 <?php if($page == 'collections'): ?>
 <div class="card mb-3"><div class="card-header bg-primary text-white">Search Customer</div><div class="card-body"><input type="text" id="collectionSearch" class="form-control" placeholder="Type name, mobile, building, room..."><div id="collectionSearchResults" class="mt-2"></div></div></div>
-<div class="card"><div class="card-header bg-warning text-dark">Pending Customers (Oldest Unpaid First)</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered"><thead class="table-dark"><tr><th>#</th><th>Name</th><th>Mobile</th><th>Billing Day</th><th>Address</th><th>Unpaid Months</th><th>Total Due</th><th>Action</th></tr></thead><tbody><?php $idx=0; foreach($pending_customers as $p): $idx++; $total_due = array_sum(array_column($p['unpaid'], 'due')); ?><tr><td style="text-align:center"><?php echo $idx; ?></a></td><td><?php echo htmlspecialchars($p['name']); ?></a></td><td><?php echo $p['mobile']; ?></a><td><strong>Day <?php echo $p['due_day']; ?></strong></a><td><?php echo $p['building'].' '.$p['apartment'].' R'.$p['room']; ?></a><td><?php foreach($p['unpaid'] as $u) echo date('M Y', strtotime($u['month']))." (".$u['due']." SAR)<br>"; ?></a><td><?php echo $total_due; ?> SAR</a><td><button class="btn btn-sm btn-primary" onclick="openCollectionModal(<?php echo $p['id']; ?>,'<?php echo htmlspecialchars($p['name']); ?>')"><i class="fas fa-money-bill"></i> Collect</button> <a href="https://wa.me/966<?php echo $p['mobile']; ?>?text=<?php echo urlencode("Dear {$p['name']}, you have unpaid bills:\n".implode("\n", array_map(function($u){return date('F Y',strtotime($u['month'])).": {$u['due']} SAR";},$p['unpaid']))."\nTotal due: $total_due SAR\nPlease pay soon.\n\nEnjoy free movies: http://10.12.14.16:8082\n\nTechnical Support:\nCyber Net: +966594266584\nRiyad Hossain: +966546377863\nJahir Hossain: +966542349510"); ?>" target="_blank" class="btn btn-sm whatsapp-btn"><i class="fab fa-whatsapp"></i> Remind</a> </a></tr><?php endforeach; if($idx==0): ?><tr><td colspan="8" class="text-center">No pending customers - all bills paid!</a></tr><?php endif; ?></tbody></table></div></div></div>
+<div class="card"><div class="card-header bg-warning text-dark">Pending Customers (Oldest Unpaid First)</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered"><thead class="table-dark"><tr><th>#</th><th>Name</th><th>Mobile</th><th>Billing Day</th><th>Address</th><th>Unpaid Months</th><th>Total Due</th><th>Action</th></tr></thead><tbody><?php $idx=0; foreach($pending_customers as $p): $idx++; $total_due = array_sum(array_column($p['unpaid'], 'due')); $months_json = json_encode(array_map(function($u){ return ['month_name' => date('F Y', strtotime($u['month'])), 'due' => $u['due']]; }, $p['unpaid'])); ?><tr><td style="text-align:center"><?php echo $idx; ?></td><td><?php echo htmlspecialchars($p['name']); ?></td><td><?php echo $p['mobile']; ?></td><td><strong>Day <?php echo $p['due_day']; ?></strong></td><td><?php echo $p['building'].' '.$p['apartment'].' R'.$p['room']; ?></td><td><?php foreach($p['unpaid'] as $u) echo date('M Y', strtotime($u['month']))." (".$u['due']." SAR)<br>"; ?></td><td><?php echo $total_due; ?> SAR</a><td><button class="btn btn-sm btn-primary" onclick="openCollectionModal(<?php echo $p['id']; ?>,'<?php echo htmlspecialchars($p['name']); ?>')"><i class="fas fa-money-bill"></i> Collect</button> <button onclick="sendReminder('<?php echo $p['mobile']; ?>', '<?php echo htmlspecialchars($p['name']); ?>', <?php echo $total_due; ?>, <?php echo htmlspecialchars($months_json, ENT_QUOTES); ?>)" class="btn btn-sm whatsapp-btn"><i class="fab fa-whatsapp"></i> Remind</button> </a></tr><?php endforeach; if($idx==0): ?><tr><td colspan="8" class="text-center">No pending customers - all bills paid!</a></tr><?php endif; ?></tbody></table></div></div></div>
 
 <div class="modal fade" id="collectionModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header bg-primary text-white"><h5>Collect Payment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form method="post" id="partialCollectionForm"><input type="hidden" name="action" value="add_collection_partial"><input type="hidden" name="customer_id" id="coll_customer_id"><h6 id="coll_customer_name"></h6><div id="unpaidMonthsList"></div><hr><div class="alert alert-info">Total to pay: <span id="totalAmount">0</span> SAR</div><button type="submit" class="btn btn-primary">Record Payment</button></form></div></div></div></div>
 <?php endif; ?>
@@ -414,7 +432,7 @@ $all_collections = $db->query("SELECT c.id, c.customer_id, cust.name as customer
 <?php if($page == 'customers'): ?>
 <div class="card mb-3"><div class="card-header bg-primary text-white">Search Customer</div><div class="card-body"><input type="text" id="customerSearch" class="form-control" placeholder="Type name, mobile, building, room..."><div id="customerSearchResults" class="mt-2"></div></div></div>
 <div class="d-flex justify-content-between mb-3"><h5>All Customers</h5><button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#customerModal" onclick="clearCustomerForm()"><i class="fas fa-plus"></i> Add Customer</button></div>
-<div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody id="customersTableBody"><?php $i=0; $custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name"); while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?> <tr data-name="<?php echo htmlspecialchars($c['name']); ?>" data-mobile="<?php echo $c['mobile']; ?>" data-building="<?php echo $c['building']; ?>" data-room="<?php echo $c['room']; ?>"><td><?php echo $i; ?></a><td><?php echo htmlspecialchars($c['name']); ?><br><small><a href="#" onclick="showHistory(<?php echo $c['id']; ?>,'<?php echo htmlspecialchars($c['name']); ?>')">View History</a></small></a><td><?php echo $c['mobile']; ?></a><td><?php echo $c['building'].' '.$c['apartment'].' R'.$c['room']; ?></a><td>Day <?php echo $c['billing_day']; ?></a><td><a href="https://wa.me/966<?php echo $c['mobile']; ?>?text=<?php echo urlencode("Dear {$c['name']}, your internet bill is due on day {$c['billing_day']}. Please pay on time.\n\nEnjoy free movies: http://10.12.14.16:8082\n\nTechnical Support:\nCyber Net: +966594266584\nRiyad Hossain: +966546377863\nJahir Hossain: +966542349510"); ?>" target="_blank" class="btn btn-sm whatsapp-btn"><i class="fab fa-whatsapp"></i></a> </a><td><button class="btn btn-sm btn-info" onclick="editCust(<?php echo $c['id']; ?>,'<?php echo htmlspecialchars($c['name']); ?>','<?php echo $c['mobile']; ?>','<?php echo $c['building']; ?>','<?php echo $c['apartment']; ?>','<?php echo $c['room']; ?>',<?php echo $c['billing_day']; ?>,'<?php echo $c['billing_start_date']; ?>')"><i class="fas fa-edit"></i></button> <a href="?delete_customer=<?php echo $c['id']; ?>&page=customers" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')"><i class="fas fa-trash"></i></a></a></tr><?php }?></tbody></table></div>
+<div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>WhatsApp</th><th>Action</th></tr></thead><tbody id="customersTableBody"><?php $i=0; $custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name"); while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?> <tr data-name="<?php echo htmlspecialchars($c['name']); ?>" data-mobile="<?php echo $c['mobile']; ?>" data-building="<?php echo $c['building']; ?>" data-room="<?php echo $c['room']; ?>"><td><?php echo $i; ?></td><td><?php echo htmlspecialchars($c['name']); ?><br><small><a href="#" onclick="showHistory(<?php echo $c['id']; ?>,'<?php echo htmlspecialchars($c['name']); ?>')">View History</a></small></td><td><?php echo $c['mobile']; ?></td><td><?php echo $c['building'].' '.$c['apartment'].' R'.$c['room']; ?></td><td>Day <?php echo $c['billing_day']; ?></td><button onclick="sendReminderSimple('<?php echo $c['mobile']; ?>', '<?php echo htmlspecialchars($c['name']); ?>')" class="btn btn-sm whatsapp-btn"><i class="fab fa-whatsapp"></i></button> </a><td><button class="btn btn-sm btn-info" onclick="editCust(<?php echo $c['id']; ?>,'<?php echo htmlspecialchars($c['name']); ?>','<?php echo $c['mobile']; ?>','<?php echo $c['building']; ?>','<?php echo $c['apartment']; ?>','<?php echo $c['room']; ?>',<?php echo $c['billing_day']; ?>,'<?php echo $c['billing_start_date']; ?>')"><i class="fas fa-edit"></i></button> <a href="?delete_customer=<?php echo $c['id']; ?>&page=customers" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')"><i class="fas fa-trash"></i></a></a></tr><?php }?></tbody></table></div>
 
 <div class="modal fade" id="customerModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header bg-success text-white"><h5>Customer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form method="post"><input type="hidden" name="action" value="save_customer"><input type="hidden" name="id" id="cust_id"><input type="text" name="name" id="cust_name" class="form-control mb-2" placeholder="Full Name" required><input type="text" name="mobile" id="cust_mobile" class="form-control mb-2" placeholder="Mobile Number" required><input type="text" name="building" id="cust_building" class="form-control mb-2" placeholder="Building"><input type="text" name="apartment" id="cust_apartment" class="form-control mb-2" placeholder="Apartment"><input type="text" name="room" id="cust_room" class="form-control mb-2" placeholder="Room"><input type="number" name="billing_day" id="cust_billing_day" class="form-control mb-2" placeholder="Billing Day (1-31)" required><input type="date" name="billing_start_date" id="cust_start_date" class="form-control mb-2" required><button type="submit" class="btn btn-success">Save Customer</button></form></div></div></div></div>
 
@@ -423,24 +441,24 @@ $all_collections = $db->query("SELECT c.id, c.customer_id, cust.name as customer
 
 <!-- COLLECTION REPORT -->
 <?php if($page == 'report'): ?>
-<div class="card"><div class="card-header bg-info text-white">All Collections (Who Collected From Whom)</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>ID</th><th>Customer</th><th>Month (Owed)</th><th>Amount (SAR)</th><th>Collected Date</th><th>Collected By</th><?php if(isMaster()): ?><th>Actions</th><?php endif; ?> </a></thead><tbody><?php while($col=$all_collections->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo $col['id']; ?></a><td><?php echo htmlspecialchars($col['customer_name']); ?></a><td><?php echo $col['month_year']; ?></a><td><?php echo $col['amount']; ?> SAR</a><td><?php echo $col['collected_date']; ?></a><td><?php echo htmlspecialchars($col['collector']); ?></a><?php if(isMaster()): ?><td><form method="post" style="display:inline-block"><input type="hidden" name="action" value="edit_collection"><input type="hidden" name="collection_id" value="<?php echo $col['id']; ?>"><input type="number" name="amount" value="<?php echo $col['amount']; ?>" step="1" style="width:70px" class="form-control form-control-sm d-inline-block"><button type="submit" class="btn btn-sm btn-primary">Edit</button></form> <a href="?delete_collection=<?php echo $col['id']; ?>&page=report" class="btn btn-sm btn-danger" onclick="return confirm('Delete this collection?')">Delete</a></a><?php endif; ?> </a></tr><?php endwhile; ?></tbody></table></div></div></div>
+<div class="card"><div class="card-header bg-info text-white">All Collections (Who Collected From Whom)</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>ID</th><th>Customer</th><th>Month (Owed)</th><th>Amount (SAR)</th><th>Collected Date</th><th>Collected By</th><?php if(isMaster()): ?><th>Actions</th><?php endif; ?> </a></thead><tbody><?php while($col=$all_collections->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo $col['id']; ?></td><td><?php echo htmlspecialchars($col['customer_name']); ?></td><td><?php echo $col['month_year']; ?></td><td><?php echo $col['amount']; ?> SAR</a></td><td><?php echo $col['collected_date']; ?></td><td><?php echo htmlspecialchars($col['collector']); ?><?php if(isMaster()): ?><td><form method="post" style="display:inline-block"><input type="hidden" name="action" value="edit_collection"><input type="hidden" name="collection_id" value="<?php echo $col['id']; ?>"><input type="number" name="amount" value="<?php echo $col['amount']; ?>" step="1" style="width:70px" class="form-control form-control-sm d-inline-block"><button type="submit" class="btn btn-sm btn-primary">Edit</button></form> <a href="?delete_collection=<?php echo $col['id']; ?>&page=report" class="btn btn-sm btn-danger" onclick="return confirm('Delete this collection?')">Delete</a><?php endif; ?> </a></tr><?php endwhile; ?></tbody></table></div></div></div>
 <?php endif; ?>
 
 <!-- FILES -->
 <?php if($page == 'files'): ?>
 <div class="card mb-3"><div class="card-header bg-dark text-white">Upload Movie/File</div><div class="card-body"><form action="portal.php?page=files" method="post" enctype="multipart/form-data"><div class="row g-2"><div class="col-md-3"><input type="text" name="title" class="form-control" placeholder="Title" required></div><div class="col-md-3"><textarea name="description" class="form-control" placeholder="Description"></textarea></div><div class="col-md-3"><input type="file" name="upload_file" class="form-control" required></div><div class="col-md-3"><button type="submit" class="btn btn-primary w-100">Upload</button></div></div></form></div></div>
-<div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>Title</th><th>Original Name</th><th>Size (MB)</th><th>Downloads</th><th>Action</th></tr></thead><tbody><?php while($f=$files->fetchArray(SQLITE3_ASSOC)){$size=round($f['size']/1048576,2);?><tr><td><?php echo htmlspecialchars($f['title']); ?></a><td><?php echo htmlspecialchars($f['original_name']); ?></a><td><?php echo $size; ?></a><td><?php echo $f['downloads']; ?></a><td><a href="?download=<?php echo $f['id']; ?>" class="btn btn-sm btn-success"><i class="fas fa-download"></i> Download</a> <?php if(isMaster()){ ?><a href="?delete_file=<?php echo $f['id']; ?>&page=files" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')"><i class="fas fa-trash"></i></a><?php } ?> </a></td><?php }?></tbody></table></div>
+<div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>Title</th><th>Original Name</th><th>Size (MB)</th><th>Downloads</th><th>Action</th></tr></thead><tbody><?php while($f=$files->fetchArray(SQLITE3_ASSOC)){$size=round($f['size']/1048576,2);?><tr><td><?php echo htmlspecialchars($f['title']); ?></td><td><?php echo htmlspecialchars($f['original_name']); ?></td><td><?php echo $size; ?></td><td><?php echo $f['downloads']; ?><td><a href="?download=<?php echo $f['id']; ?>" class="btn btn-sm btn-success"><i class="fas fa-download"></i> Download</a> <?php if(isMaster()){ ?><a href="?delete_file=<?php echo $f['id']; ?>&page=files" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')"><i class="fas fa-trash"></i></a><?php } ?> </a></tr><?php }?></tbody></table></div>
 <?php endif; ?>
 
 <!-- AUDIT LOG with User Filter -->
 <?php if($page == 'audit' && isMaster()): ?>
 <div class="card mb-3"><div class="card-header bg-secondary text-white">Filter by User</div><div class="card-body"><form method="get" class="row g-2"><input type="hidden" name="page" value="audit"><div class="col-8 col-md-4"><select name="filter_user" class="form-select"><option value="0">All Users</option><?php $users=$db->query("SELECT id, fullname FROM users ORDER BY fullname"); while($u=$users->fetchArray(SQLITE3_ASSOC)){$selected=($filter_user==$u['id'])?'selected':'';echo "<option value=\"{$u['id']}\" $selected>".htmlspecialchars($u['fullname'])."</option>";}?></select></div><div class="col-4 col-md-2"><button type="submit" class="btn btn-primary w-100">Filter</button></div><div class="col-4 col-md-2"><a href="?page=audit&filter_user=0" class="btn btn-secondary w-100">Clear</a></div></form></div></div>
-<div class="card"><div class="card-header bg-secondary text-white">Audit Log - All System Changes</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody><?php while($log=$audit_log->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo $log['timestamp']; ?></a><td><?php echo htmlspecialchars($log['fullname']); ?></a><td><?php echo $log['action']; ?></a><td><?php echo htmlspecialchars($log['details']); ?></a></tr><?php endwhile; ?></tbody></table></div></div></div>
+<div class="card"><div class="card-header bg-secondary text-white">Audit Log - All System Changes</div><div class="card-body"><div class="table-responsive"><table class="table table-bordered table-striped"><thead class="table-dark"><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody><?php while($log=$audit_log->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo $log['timestamp']; ?></td><td><?php echo htmlspecialchars($log['fullname']); ?></td><td><?php echo $log['action']; ?></td><td><?php echo htmlspecialchars($log['details']); ?></td><?php endwhile; ?></tbody></table></div></div></div>
 <?php endif; ?>
 
 <!-- ADMINS PAGE -->
 <?php if($page == 'admins' && isMaster()): ?>
-<div class="card mb-3"><div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center"><span>Admin Users</span><button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addAdminModal">+ Add Admin</button></div><div class="card-body"><div class="table-responsive"><table class="table table-bordered"><thead class="table-dark"><tr><th>Name</th><th>Username</th><th>Role</th><th>Actions</th></tr></thead><tbody><?php $admins=$db->query("SELECT id,fullname,username,role FROM users"); while($a=$admins->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo htmlspecialchars($a['fullname']); ?></a><td><?php echo htmlspecialchars($a['username']); ?></a><td><?php echo $a['role']; ?></a><td><?php if($a['role'] == 'master'): ?><button class="btn btn-sm btn-info" onclick="editMaster(<?php echo $a['id']; ?>, '<?php echo htmlspecialchars($a['fullname']); ?>', '<?php echo htmlspecialchars($a['username']); ?>')">Edit Master</button><?php else: ?><button class="btn btn-sm btn-warning" onclick="resetPass(<?php echo $a['id']; ?>)">Reset Password</button> <a href="?delete_admin=<?php echo $a['id']; ?>&page=admins" class="btn btn-sm btn-danger" onclick="return confirm('Delete this admin?')">Delete</a><?php endif; ?></a></tr><?php endwhile; ?></tbody></table></div></div></div>
+<div class="card mb-3"><div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center"><span>Admin Users</span><button class="btn btn-sm btn-light" data-bs-toggle="modal" data-bs-target="#addAdminModal">+ Add Admin</button></div><div class="card-body"><div class="table-responsive"><table class="table table-bordered"><thead class="table-dark"><tr><th>Name</th><th>Username</th><th>Role</th><th>Actions</th></tr></thead><tbody><?php $admins=$db->query("SELECT id,fullname,username,role FROM users"); while($a=$admins->fetchArray(SQLITE3_ASSOC)): ?><tr><td><?php echo htmlspecialchars($a['fullname']); ?></td><td><?php echo htmlspecialchars($a['username']); ?></td><td><?php echo $a['role']; ?></td><?php if($a['role'] == 'master'): ?><button class="btn btn-sm btn-info" onclick="editMaster(<?php echo $a['id']; ?>, '<?php echo htmlspecialchars($a['fullname']); ?>', '<?php echo htmlspecialchars($a['username']); ?>')">Edit Master</button><?php else: ?><button class="btn btn-sm btn-warning" onclick="resetPass(<?php echo $a['id']; ?>)">Reset Password</button> <a href="?delete_admin=<?php echo $a['id']; ?>&page=admins" class="btn btn-sm btn-danger" onclick="return confirm('Delete this admin?')">Delete</a><?php endif; ?></td><?php endwhile; ?></tbody></table></div></div></div>
 
 <div class="modal fade" id="addAdminModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header bg-success text-white"><h5>Add New Admin</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form method="post"><input type="hidden" name="action" value="save_admin"><div class="mb-2"><input type="text" name="fullname" class="form-control" placeholder="Full Name" required></div><div class="mb-2"><input type="text" name="username" class="form-control" placeholder="Username" required></div><div class="mb-2"><input type="password" name="password" class="form-control" placeholder="Password" required></div><button type="submit" class="btn btn-success">Add Admin</button></form></div></div></div></div>
 
@@ -457,6 +475,69 @@ $all_collections = $db->query("SELECT c.id, c.customer_id, cust.name as customer
 function toggleDarkMode() { document.body.classList.toggle('dark'); localStorage.setItem('darkMode', document.body.classList.contains('dark') ? 'enabled' : 'disabled'); }
 if (localStorage.getItem('darkMode') === 'enabled') document.body.classList.add('dark');
 
+
+
+
+
+function sendReminder(mobile, name, totalDue, monthsList) {
+    let monthsText = "";
+    if (monthsList && monthsList.length > 0) {
+        monthsList.forEach(function(m) {
+            monthsText += "- " + m.month_name + ": " + m.due + " SAR\n";
+        });
+    }
+    
+    let message = "Dear " + name + ",\n\nYou have unpaid bills:\n" + monthsText + "\nTotal due: " + totalDue + " SAR\nPlease pay soon.\n\nEnjoy free movies: http://10.12.14.16:8082\n\nTechnical Support:\nCyber Net: +966594266584\nRiyad Hossain: +966546377863\nJahir Hossain: +966542349510";
+    let phone = mobile.replace(/^0+/, "");
+    
+    fetch("http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": "dev-admin-key"
+        },
+        body: JSON.stringify({
+            chatId: "966" + phone + "@c.us",
+            text: message
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert("✓ WhatsApp reminder sent to " + name);
+    })
+    .catch(error => {
+        alert("✗ Failed to send. Check OpenWA.");
+    });
+}
+
+
+
+
+
+function sendReminderSimple(mobile, name) {
+    let message = "Dear " + name + ",\\n\\nYour internet bill is due. Please pay on time.\\n\\nEnjoy free movies: http://10.12.14.16:8082\\n\\nTechnical Support:\\nCyber Net: +966594266584\\nRiyad Hossain: +966546377863\\nJahir Hossain: +966542349510";
+    let phone = mobile.replace(/^0+/, "");
+    
+    fetch("http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": "dev-admin-key"
+        },
+        body: JSON.stringify({
+            chatId: "966" + phone + "@c.us",
+            text: message
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert("✓ WhatsApp reminder sent to " + name);
+    })
+    .catch(error => {
+        alert("✗ Failed to send. Check OpenWA.");
+    });
+}
+
 const collSearch = document.getElementById('collectionSearch');
 if (collSearch) {
     collSearch.addEventListener('input', function() {
@@ -470,7 +551,7 @@ if (collSearch) {
                 data.forEach(cust => {
                     html += '<div class="list-group-item"><strong>' + cust.name + '</strong><br><small>Mobile: ' + cust.mobile + ' | Building: ' + cust.building + ' | Room: ' + cust.room + '</small><br>';
                     html += '<button class="btn btn-sm btn-primary mt-1" onclick="openCollectionModal(' + cust.id + ',\'' + cust.name.replace(/'/g, "\\'") + '\')">Collect Bill</button> ';
-                    html += '<a href="https://wa.me/966' + cust.mobile + '?text=' + encodeURIComponent("Dear " + cust.name + ", please pay your internet bill. Thanks.") + '" target="_blank" class="btn btn-sm whatsapp-btn mt-1">WhatsApp</a></div>';
+                    html += '<button onclick="sendReminderSimple(\'' + cust.mobile + '\', \'' + cust.name.replace(/'/g, "\\'") + '\')" class="btn btn-sm whatsapp-btn mt-1">WhatsApp</button></div>';
                 });
                 html += '</div>';
                 resultsDiv.innerHTML = html;
@@ -513,8 +594,8 @@ function openCollectionModal(id, name) {
     fetch('get_unpaid.php?cid=' + id).then(r => r.json()).then(data => {
         let html = '<table class="table table-bordered"><thead><tr><th>Select</th><th>Month</th><th>Due (SAR)</th><th>Amount to Pay (SAR)</th></tr></thead><tbody>';
         data.forEach((m, idx) => {
-            html += '<tr><td><input type="checkbox" name="months[]" value="' + m.month + '" onchange="updateTotal()" class="month-checkbox" checked></a></td>';
-            html += '<td><strong>' + new Date(m.month + '-01').toLocaleDateString('en', { year:'numeric', month:'long' }) + '</strong></a></td>';
+            html += '<tr><td><input type="checkbox" name="months[]" value="' + m.month + '" onchange="updateTotal()" class="month-checkbox" checked></td>';
+            html += '<td><strong>' + new Date(m.month + '-01').toLocaleDateString('en', { year:'numeric', month:'long' }) + '</strong></td>';
             html += '<td>' + m.due + ' SAR</a></td>';
             html += '<td><input type="number" name="amounts[]" class="form-control amount-input" value="' + m.due + '" step="1" onchange="updateTotal()" style="width:120px"></a></td>';
             html += '</tr>';
