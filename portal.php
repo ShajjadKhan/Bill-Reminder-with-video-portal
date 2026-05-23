@@ -16,7 +16,7 @@ function logAction($db, $user_id, $action, $details) { $db->exec("INSERT INTO au
 function sendWhatsAppMessage($mobile, $message) {
     $phone = ltrim($mobile, '0');
     $chatId = "966" . $phone . "@c.us";
-    $url = "http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text";
+    $url = "http://10.12.14.16:2785/api/sessions/84ecd217-e6bc-4b7e-ac92-1d09cb3f0be7/messages/send-text";
     
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -474,7 +474,7 @@ function sendReminder(mobile, name, totalDue, monthsList) {
     let message = "Dear " + name + ",\n\nYou have unpaid bills:\n" + monthsText + "\nTotal due: " + totalDue + " SAR\nPlease pay soon.\n\nEnjoy free movies: http://10.12.14.16:8082\n\nTechnical Support:\nCyber Net: +966594266584\nRiyad Hossain: +966546377863\nJahir Hossain: +966542349510";
     let phone = mobile.replace(/^0+/, "");
     
-    fetch("http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text", {
+    fetch("http://10.12.14.16:2785/api/sessions/84ecd217-e6bc-4b7e-ac92-1d09cb3f0be7/messages/send-text", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -498,7 +498,7 @@ function sendReminderSimple(mobile, name) {
     let message = "Dear " + name + ",\n\nYour internet bill is due. Please pay on time.\n\nEnjoy free movies: http://10.12.14.16:8082\n\nTechnical Support:\nCyber Net: +966594266584\nRiyad Hossain: +966546377863\nJahir Hossain: +966542349510";
     let phone = mobile.replace(/^0+/, "");
     
-    fetch("http://10.12.14.16:2785/api/sessions/63bd1d8f-7ed7-45f4-8e25-821626752eaf/messages/send-text", {
+    fetch("http://10.12.14.16:2785/api/sessions/84ecd217-e6bc-4b7e-ac92-1d09cb3f0be7/messages/send-text", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
