@@ -521,7 +521,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 .btn-icon{width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#cbd5e1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;text-decoration:none;font-size:13px}
 .btn-icon:hover{background:rgba(255,255,255,.12);color:#fff}
 .main-content{flex:1;padding:20px;max-width:1600px;margin:0 auto;width:100%}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--card-shadow);overflow:hidden;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--card-shadow);overflow:visible;margin-bottom:16px}
 .card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface)}
 .card-header-title{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
 .card-header-title i{color:var(--accent);font-size:13px}
@@ -587,7 +587,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .search-wrap{position:relative}
 .search-wrap input{padding-left:36px}
 .search-wrap .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px}
-.search-results{position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--card-shadow);max-height:320px;overflow-y:auto;margin-top:4px}
+.search-results{position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--card-shadow);max-height:320px;overflow-y:auto;margin-top:4px}
 .search-result-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;display:flex;align-items:center;justify-content:space-between}
 .search-result-item:hover{background:var(--surface2)}
 .search-result-item:last-child{border-bottom:none}
