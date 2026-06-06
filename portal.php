@@ -116,14 +116,20 @@ function sendWhatsAppMessage($db, $mobile, $message) {
 
 function getEffectiveBillingStart($billing_start_date, $billing_day) {
     if (!$billing_start_date) return new DateTime(date('Y-m-01'));
-    $dt      = new DateTime($billing_start_date);
+    $dt = new DateTime($billing_start_date);
     $join_day = (int)$dt->format('j');
-    if ($join_day > (int)$billing_day) {
-        $dt->modify('first day of next month');
+    $bd = (int)$billing_day;
+    $join_year  = (int)$dt->format('Y');
+    $join_month = (int)$dt->format('n');
+    if ($join_day <= $bd) {
+        // Joined before or on billing day — first bill is this month on billing day
+        return new DateTime(sprintf('%04d-%02d-%02d', $join_year, $join_month, $bd));
     } else {
-        $dt = new DateTime($dt->format('Y-m').'-01');
+        // Joined after billing day — first bill is next month on billing day
+        $next = new DateTime(sprintf('%04d-%02d-01', $join_year, $join_month));
+        $next->modify('+1 month');
+        return new DateTime(sprintf('%04d-%02d-%02d', (int)$next->format('Y'), (int)$next->format('n'), $bd));
     }
-    return $dt;
 }
 
 function getUnpaidMonths($db, $customer_id, $current_month) {
@@ -131,20 +137,29 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
     if (!$c) return [];
     $fee = max(1, floatval($c['monthly_fee'] ?: 30));
     $bd  = (int)($c['billing_day'] ?: 1);
+    $today = new DateTime();
     $start = getEffectiveBillingStart($c['billing_start_date'], $bd);
-    $end   = (new DateTime($current_month.'-01'))->modify('+1 month');
     $months = [];
-    $period = new DatePeriod($start, new DateInterval('P1M'), $end);
-    foreach ($period as $dt) $months[] = $dt->format('Y-m');
-
+    $cur = clone $start;
+    $limit = 60; $i = 0;
+    while ($cur <= $today && $i++ < $limit) {
+        $months[] = $cur->format('Y-m');
+        $next_year  = (int)$cur->format('Y');
+        $next_month = (int)$cur->format('n') + 1;
+        if ($next_month > 12) { $next_month = 1; $next_year++; }
+        try {
+            $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $bd));
+        } catch (Exception $e) {
+            $cur = new DateTime(sprintf('%04d-%02d-01', $next_year, $next_month));
+            $cur->modify('last day of this month');
+        }
+    }
     $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=$customer_id GROUP BY month_year");
     $paid = [];
     while ($r = $res->fetchArray(SQLITE3_ASSOC)) $paid[$r['month_year']] = ['total'=>floatval($r['total']),'settled'=>intval($r['settled'])];
-
     $unpaid = [];
     foreach ($months as $m) {
         $p = $paid[$m] ?? null;
-        // Skip if settled or waived (0 SAR with record)
         if ($p && ($p['settled'] == 1 || $p['total'] == 0)) continue;
         $paid_amt = $p ? $p['total'] : 0;
         $due = round($fee - $paid_amt, 2);
@@ -329,11 +344,10 @@ if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
     $paid_items  = [];
     $total_paid  = 0;
 
-    $settled_months = $_POST['settled'] ?? [];
     foreach ($months as $i => $month) {
         $amt = floatval($amounts[$i]);
         $month = SQLite3::escapeString($month);
-        $is_settled = in_array($month, $settled_months) ? 1 : 0;
+        $is_settled = 1;
         if ($amt >= 0) {
             $db->exec("INSERT INTO collections (customer_id,month_year,amount,collected_by,collected_date,is_settled)
                 VALUES ($customer_id,'$month',$amt,{$_SESSION['user_id']},datetime('now'),$is_settled)");
@@ -623,10 +637,14 @@ tbody td{padding:10px 12px;vertical-align:middle}
 
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr 1fr}
-  .topbar{padding:0 8px;gap:6px;height:52px}
-  .nav-tabs-wrap a{padding:6px 8px;font-size:11px;gap:4px}
-  .nav-tabs-wrap a i{display:none}
+  .topbar{padding:6px 8px;gap:4px;height:auto;flex-wrap:wrap}
+  .topbar-brand{order:1}
+  .topbar-right{order:2;margin-left:auto}
+  .nav-tabs-wrap{order:3;width:100%;flex:0 0 100%;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;justify-content:flex-start;margin-top:2px}
+  .nav-tabs-wrap a{padding:5px 10px;font-size:11px;gap:4px}
+  .nav-tabs-wrap a i{display:inline-block;font-size:11px;opacity:.8}
   .user-badge span:first-of-type{display:none}
+  .user-badge .role{display:inline-block}
   .main-content{padding:8px}
   .card-body{padding:12px}
   .card-header{padding:10px 12px}
@@ -639,8 +657,9 @@ tbody td{padding:10px 12px;vertical-align:middle}
   .input-group{flex-wrap:wrap}
   .input-group > div{min-width:100% !important}
   table{font-size:11px}
-  thead th{padding:7px 6px;font-size:10px}
-  tbody td{padding:7px 6px}
+  thead th{padding:7px 6px;font-size:10px;white-space:nowrap}
+  tbody td{padding:7px 6px;white-space:nowrap}
+  .table-wrap,.card .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .due-tag{font-size:10px}
   .topbar-brand .brand-name{display:block;font-size:13px}
 }
@@ -1183,7 +1202,7 @@ const custSearch=document.getElementById('custSearch');
 if(custSearch){custSearch.addEventListener('input',function(){const q=this.value.toLowerCase();document.querySelectorAll('#custTbody tr').forEach(row=>{const n=(row.dataset.n||'').toLowerCase();const m=(row.dataset.m||'').toLowerCase();const b=(row.dataset.b||'').toLowerCase();const r=(row.dataset.r||'').toLowerCase();row.style.display=(n+m+b+r).includes(q)?'':'none';});});}
 const collSearch=document.getElementById('collSearch');
 if(collSearch){let debounce;collSearch.addEventListener('input',function(){clearTimeout(debounce);const q=this.value.trim();const res=document.getElementById('collResults');if(q.length<2){res.style.display='none';return;}debounce=setTimeout(()=>{fetch('search_customers.php?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{if(!data.length){res.innerHTML='<div style="padding:12px;text-align:center;color:var(--text-muted)">No results</div>';res.style.display='block';return;}res.innerHTML=data.map(c=>`<div class="search-result-item"><div><strong>${c.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${c.mobile} · ${c.building} R${c.room}</span></div><div style="display:flex;gap:6px"><button class="btn btn-primary btn-xs" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill'></i> Collect</button><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}')"><i class='fab fa-whatsapp'></i></button></div></div>`).join('');res.style.display='block';});},300);});document.addEventListener('click',e=>{if(!collSearch.contains(e.target))document.getElementById('collResults').style.display='none';});}
-function openCollectModal(cid,name){document.getElementById('coll_cid').value=cid;document.getElementById('coll_name').textContent='Customer: '+name;document.getElementById('unpaidList').innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('collectModal');fetch('get_unpaid.php?cid='+cid).then(r=>r.json()).then(data=>{if(!data.length){document.getElementById('unpaidList').innerHTML='<div class="alert alert-success"><i class="fas fa-check-circle"></i> All bills are paid for this customer!</div>';document.getElementById('totalAmt').textContent='0';return;}let html='<div class="table-wrap"><table><thead><tr><th>Select</th><th>Month</th><th>Standard Due</th><th>Amount to Collect (SAR)</th><th>Settle Month</th></tr></thead><tbody>';data.forEach((m,i)=>{html+=`<tr><td><input type="checkbox" name="months[]" value="${m.month}" class="month-cb" checked onchange="updateTotal()"></td><td><strong>${new Date(m.month+'-02').toLocaleDateString('en',{year:'numeric',month:'long'})}</strong></td><td><span class="badge badge-red mono">${m.due} SAR</span></td><td><input type="number" name="amounts[]" class="form-control amt-input" value="${m.due}" min="0" step="0.5" style="width:120px" onchange="updateTotal()"></td></tr>`;});html+='</tbody></table></div>';document.getElementById('unpaidList').innerHTML=html;updateTotal();});}
+function openCollectModal(cid,name){document.getElementById('coll_cid').value=cid;document.getElementById('coll_name').textContent='Customer: '+name;document.getElementById('unpaidList').innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('collectModal');fetch('get_unpaid.php?cid='+cid).then(r=>r.json()).then(data=>{if(!data.length){document.getElementById('unpaidList').innerHTML='<div class="alert alert-success"><i class="fas fa-check-circle"></i> All bills are paid for this customer!</div>';document.getElementById('totalAmt').textContent='0';return;}let html='<div class="table-wrap"><table><thead><tr><th>✓ Settle</th><th>Month</th><th>Due</th><th>Amount Collected (SAR)</th></tr></thead><tbody>';data.forEach((m,i)=>{html+=`<tr><td><input type="checkbox" name="months[]" value="${m.month}" class="month-cb" checked onchange="updateTotal()" title="Check to settle this month"></td><td><strong>${new Date(m.month+'-02').toLocaleDateString('en',{year:'numeric',month:'long'})}</strong></td><td><span class="badge badge-red mono">${m.due} SAR</span></td><td><input type="number" name="amounts[]" class="form-control amt-input" value="${m.due}" min="0" step="0.5" style="width:120px" onchange="updateTotal()"></td></tr>`;});html+='</tbody></table></div>';document.getElementById('unpaidList').innerHTML=html;updateTotal();});}
 function updateTotal(){let total=0;document.querySelectorAll('.amt-input').forEach(inp=>{const row=inp.closest('tr');const cb=row?.querySelector('.month-cb');if(!cb||cb.checked)total+=parseFloat(inp.value)||0;});document.getElementById('totalAmt').textContent=total.toFixed(2);}
 function showHistory(cid,name){document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('histModal');fetch('get_history.php?cid='+cid).then(r=>r.text()).then(html=>{document.getElementById('histContent').innerHTML=html;});}
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
