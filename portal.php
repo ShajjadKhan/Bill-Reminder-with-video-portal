@@ -412,6 +412,29 @@ if (isLoggedIn() && isAdmin() && isset($_GET['delete_customer'])) {
     header('Location: portal.php?page=customers'); exit;
 }
 
+if (isLoggedIn() && isAdmin() && $action === 'save_promise') {
+    $cid          = intval($_POST['customer_id']);
+    $month_year   = SQLite3::escapeString($_POST['month_year'] ?? date('Y-m'));
+    $promise_date = SQLite3::escapeString($_POST['promise_date']);
+    $note         = SQLite3::escapeString($_POST['note'] ?? '');
+    // Cancel any existing pending promise for this customer
+    $db->exec("UPDATE promises SET status='cancelled' WHERE customer_id=$cid AND status='pending'");
+    // Insert new promise
+    $db->exec("INSERT INTO promises (customer_id,month_year,promise_date,note,status,created_by,created_at)
+        VALUES ($cid,'$month_year','$promise_date','$note','pending',{$_SESSION['user_id']},datetime('now'))");
+    $cname = $db->querySingle("SELECT name FROM customers WHERE id=$cid");
+    logAction($db,$_SESSION['user_id'],'PROMISE',"$cname — promise to pay by $promise_date".($note?" ($note)":''));
+    $_SESSION['msg'] = "Promise recorded for $cname — expected by $promise_date";
+    header('Location: ?page=dashboard'); exit;
+}
+
+if (isLoggedIn() && isAdmin() && $action === 'cancel_promise') {
+    $pid  = intval($_POST['promise_id']);
+    $db->exec("UPDATE promises SET status='cancelled' WHERE id=$pid");
+    $_SESSION['msg'] = "Promise cancelled";
+    header('Location: ?page=dashboard'); exit;
+}
+
 if (isLoggedIn() && isMaster() && $action === 'edit_collection') {
     $id  = intval($_POST['collection_id']);
     $amt = floatval($_POST['amount']);
@@ -482,6 +505,14 @@ while ($c = $all_c->fetchArray(SQLITE3_ASSOC)) {
     }
 }
 usort($pending_customers, fn($a,$b) => strcmp($a['oldest_unpaid'],$b['oldest_unpaid']));
+// Load promises for pending customers
+$today_str = date('Y-m-d');
+foreach ($pending_customers as &$pc) {
+    $cid = $pc['id'];
+    $promise = $db->querySingle("SELECT * FROM promises WHERE customer_id=$cid AND status='pending' AND promise_date >= '$today_str' ORDER BY promise_date ASC LIMIT 1", true);
+    $pc['promise'] = $promise ?: null;
+}
+unset($pc);
 
 $total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status='active'");
 $collected_count = $db->querySingle("SELECT COUNT(DISTINCT customer_id) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND amount>0");
@@ -830,9 +861,14 @@ tbody td{padding:10px 12px;vertical-align:middle}
         $total_due=array_sum(array_column($p['unpaid'],'due'));
         $months_json=json_encode(array_map(fn($u)=>['month'=>$u['month'],'month_name'=>date('F Y',strtotime($u['month'].'-01')),'due'=>$u['due']],$p['unpaid']));
       ?>
-        <tr>
+        <tr style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>">
           <td class="mono" style="color:var(--text-muted)"><?= $i ?></td>
-          <td><strong><?= htmlspecialchars($p['name']) ?></strong></td>
+          <td>
+            <strong><?= htmlspecialchars($p['name']) ?></strong>
+            <?php if($p['promise']): ?>
+            <br><span class="badge badge-yellow" style="margin-top:3px;font-size:10px">🤝 Pay by <?= $p['promise']['promise_date'] ?><?= $p['promise']['note'] ? ' — '.htmlspecialchars($p['promise']['note']) : '' ?></span>
+            <?php endif; ?>
+          </td>
           <td class="mono"><?= $p['mobile'] ?></td>
           <td><span class="badge badge-blue">Day <?= $p['billing_day'] ?></span></td>
           <td style="color:var(--text-muted);font-size:12px"><?= $p['building'].' '.$p['apartment'].' R'.$p['room'] ?></td>
@@ -840,6 +876,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <td><strong style="color:var(--danger);font-family:'IBM Plex Mono'"><?= $total_due ?> SAR</strong></td>
           <td style="white-space:nowrap">
             <button class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
+            <button class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
             <button class="btn btn-whatsapp btn-xs" onclick="sendReminder('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $total_due ?>,<?= htmlspecialchars($months_json,ENT_QUOTES) ?>)"><i class="fab fa-whatsapp"></i></button>
           </td>
         </tr>
@@ -866,6 +903,36 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <span>Total to collect: <strong class="mono" id="totalAmt">0</strong> SAR</span>
         </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Record Payment</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Promise Modal -->
+<div class="modal-overlay" id="promiseModal">
+  <div class="modal-box">
+    <div class="modal-header-custom">
+      <h5><i class="fas fa-handshake" style="color:#f59e0b"></i> Record Payment Promise</h5>
+      <button class="modal-close" onclick="closeModal('promiseModal')">×</button>
+    </div>
+    <div class="modal-body-custom">
+      <form method="post">
+        <input type="hidden" name="action" value="save_promise">
+        <input type="hidden" name="customer_id" id="promise_cid">
+        <input type="hidden" name="promise_id" id="promise_pid">
+        <div style="margin-bottom:14px;font-weight:600" id="promise_name"></div>
+        <div style="margin-bottom:12px">
+          <label class="form-label">Promise to Pay By</label>
+          <input type="date" name="promise_date" id="promise_date" class="form-control" required>
+        </div>
+        <div style="margin-bottom:16px">
+          <label class="form-label">Note <small style="font-weight:400;text-transform:none">(optional)</small></label>
+          <input type="text" name="note" id="promise_note" class="form-control" placeholder="e.g. Will pay after salary, waiting for transfer...">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="submit" class="btn" style="background:#f59e0b;color:#000"><i class="fas fa-handshake"></i> Save Promise</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('promiseModal')">Cancel</button>
+        </div>
       </form>
     </div>
   </div>
@@ -1072,6 +1139,78 @@ tbody td{padding:10px 12px;vertical-align:middle}
   </div>
 </div>
 
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-title"><i class="fas fa-bullhorn" style="color:#f59e0b"></i> Broadcast Message</div>
+  </div>
+  <div class="card-body">
+    <div style="margin-bottom:12px">
+      <label class="form-label">Message — use {name} to personalize</label>
+      <textarea id="broadcast-msg" class="form-control" rows="4" placeholder="Dear {name}, watch football live tonight! Link: http://10.12.14.16:8086/live - CyberNet"></textarea>
+    </div>
+    <div style="margin-bottom:14px">
+      <span style="font-size:12px;color:var(--text-muted)" id="bc-count"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn btn-whatsapp" onclick="startBroadcast()"><i class="fab fa-whatsapp"></i> Send to All</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('broadcast-msg').value=''">Clear</button>
+    </div>
+    <div id="bc-progress" style="display:none;margin-bottom:8px">
+      <div style="background:var(--surface2);border-radius:8px;overflow:hidden;height:10px;margin-bottom:6px">
+        <div id="bc-bar" style="height:100%;background:#25D366;width:0%;transition:width .3s"></div>
+      </div>
+      <div id="bc-status" style="font-size:12px;color:var(--text-muted)"></div>
+    </div>
+    <div id="bc-log" style="max-height:200px;overflow-y:auto;font-size:12px;margin-top:8px"></div>
+  </div>
+</div>
+<script>
+window._bcCustomers = <?php
+  $all_bc=$db->query("SELECT id,name,mobile FROM customers WHERE status='active'");
+  $bc_arr=[];
+  while($r=$all_bc->fetchArray(SQLITE3_ASSOC)) $bc_arr[]=$r;
+  echo json_encode($bc_arr);
+?>;
+document.getElementById('bc-count').textContent = window._bcCustomers.length + ' customers will receive this message';
+function startBroadcast(){
+  var msg=document.getElementById('broadcast-msg').value.trim();
+  if(!msg){alert('Please enter a message');return;}
+  var customers=window._bcCustomers||[];
+  if(!customers.length){alert('No customers found');return;}
+  if(!confirm('Send to '+customers.length+' customers?'))return;
+  var cfg=getWaConfig();
+  var sent=0,failed=0,idx=0;
+  document.getElementById('bc-progress').style.display='block';
+  document.getElementById('bc-log').innerHTML='';
+  function sendNext(){
+    if(idx>=customers.length){
+      document.getElementById('bc-status').textContent='Done! Sent: '+sent+', Failed: '+failed;
+      return;
+    }
+    var c=customers[idx++];
+    var pct=Math.round((idx/customers.length)*100);
+    document.getElementById('bc-bar').style.width=pct+'%';
+    document.getElementById('bc-status').textContent='Sending to '+c.name+' ('+idx+'/'+customers.length+')...';
+    var text=msg.replace(/{name}/g,c.name);
+    var phone=c.mobile.replace(/^0+/,'');
+    if(!/^966/.test(phone))phone='966'+phone;
+    var chatId=phone+'@c.us';
+    fetch(cfg.url+'/api/sessions/'+cfg.sid+'/messages/send-text',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-API-Key':cfg.key},
+      body:JSON.stringify({chatId:chatId,text:text})
+    }).then(function(r){
+      if(r.ok){sent++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--success)">OK '+c.name+'</div>';}
+      else{failed++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">FAIL '+c.name+'</div>';}
+    }).catch(function(){
+      failed++;
+      document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">ERR '+c.name+'</div>';
+    }).finally(function(){setTimeout(sendNext,1200);});
+  }
+  sendNext();
+}
+</script>
+
 <?php elseif ($page === 'audit' && isMaster()): ?>
 <div class="card" style="margin-bottom:14px">
   <div class="card-header"><div class="card-header-title"><i class="fas fa-filter"></i> Filter by User</div></div>
@@ -1202,6 +1341,16 @@ const custSearch=document.getElementById('custSearch');
 if(custSearch){custSearch.addEventListener('input',function(){const q=this.value.toLowerCase();document.querySelectorAll('#custTbody tr').forEach(row=>{const n=(row.dataset.n||'').toLowerCase();const m=(row.dataset.m||'').toLowerCase();const b=(row.dataset.b||'').toLowerCase();const r=(row.dataset.r||'').toLowerCase();row.style.display=(n+m+b+r).includes(q)?'':'none';});});}
 const collSearch=document.getElementById('collSearch');
 if(collSearch){let debounce;collSearch.addEventListener('input',function(){clearTimeout(debounce);const q=this.value.trim();const res=document.getElementById('collResults');if(q.length<2){res.style.display='none';return;}debounce=setTimeout(()=>{fetch('search_customers.php?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{if(!data.length){res.innerHTML='<div style="padding:12px;text-align:center;color:var(--text-muted)">No results</div>';res.style.display='block';return;}res.innerHTML=data.map(c=>`<div class="search-result-item"><div><strong>${c.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${c.mobile} · ${c.building} R${c.room}</span></div><div style="display:flex;gap:6px"><button class="btn btn-primary btn-xs" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill'></i> Collect</button><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}')"><i class='fab fa-whatsapp'></i></button></div></div>`).join('');res.style.display='block';});},300);});document.addEventListener('click',e=>{if(!collSearch.contains(e.target))document.getElementById('collResults').style.display='none';});}
+function openPromiseModal(cid,name,pid){
+  document.getElementById('promise_cid').value=cid;
+  document.getElementById('promise_pid').value=pid;
+  document.getElementById('promise_name').textContent='Customer: '+name;
+  // Default date = 7 days from now
+  var d=new Date(); d.setDate(d.getDate()+7);
+  document.getElementById('promise_date').value=d.toISOString().split('T')[0];
+  document.getElementById('promise_note').value='';
+  openModal('promiseModal');
+}
 function openCollectModal(cid,name){document.getElementById('coll_cid').value=cid;document.getElementById('coll_name').textContent='Customer: '+name;document.getElementById('unpaidList').innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('collectModal');fetch('get_unpaid.php?cid='+cid).then(r=>r.json()).then(data=>{if(!data.length){document.getElementById('unpaidList').innerHTML='<div class="alert alert-success"><i class="fas fa-check-circle"></i> All bills are paid for this customer!</div>';document.getElementById('totalAmt').textContent='0';return;}let html='<div class="table-wrap"><table><thead><tr><th>✓ Settle</th><th>Month</th><th>Due</th><th>Amount Collected (SAR)</th></tr></thead><tbody>';data.forEach((m,i)=>{html+=`<tr><td><input type="checkbox" name="months[]" value="${m.month}" class="month-cb" checked onchange="updateTotal()" title="Check to settle this month"></td><td><strong>${new Date(m.month+'-02').toLocaleDateString('en',{year:'numeric',month:'long'})}</strong></td><td><span class="badge badge-red mono">${m.due} SAR</span></td><td><input type="number" name="amounts[]" class="form-control amt-input" value="${m.due}" min="0" step="0.5" style="width:120px" onchange="updateTotal()"></td></tr>`;});html+='</tbody></table></div>';document.getElementById('unpaidList').innerHTML=html;updateTotal();});}
 function updateTotal(){let total=0;document.querySelectorAll('.amt-input').forEach(inp=>{const row=inp.closest('tr');const cb=row?.querySelector('.month-cb');if(!cb||cb.checked)total+=parseFloat(inp.value)||0;});document.getElementById('totalAmt').textContent=total.toFixed(2);}
 function showHistory(cid,name){document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('histModal');fetch('get_history.php?cid='+cid).then(r=>r.text()).then(html=>{document.getElementById('histContent').innerHTML=html;});}
