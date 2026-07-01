@@ -155,8 +155,19 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
     $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=$customer_id GROUP BY month_year");
     $paid = [];
     while ($r = $res->fetchArray(SQLITE3_ASSOC)) $paid[$r['month_year']] = ['total'=>floatval($r['total']),'settled'=>intval($r['settled'])];
+    // Skip vacation hold months
+    $held = [];
+    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
+    while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
+        $hs = new DateTime($h['hold_start'] . '-01');
+        $he = new DateTime($h['hold_end'] . '-01');
+        $he->modify('+1 month');
+        $hp = new DatePeriod($hs, new DateInterval('P1M'), $he);
+        foreach ($hp as $hm) $held[$hm->format('Y-m')] = true;
+    }
     $unpaid = [];
     foreach ($months as $m) {
+        if (isset($held[$m])) continue;
         $p = $paid[$m] ?? null;
         if ($p && ($p['settled'] == 1 || $p['total'] == 0)) continue;
         $paid_amt = $p ? $p['total'] : 0;
@@ -206,11 +217,21 @@ function getCustomerBalance($db, $customer_id) {
     $waived = [];
     while ($w = $waived_res->fetchArray(SQLITE3_ASSOC)) $waived[$w['month_year']] = true;
     
-    // Calculate owed, excluding waived months
+    // Get vacation holds
+    $holds_res = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
+    $held_months = [];
+    while ($h = $holds_res->fetchArray(SQLITE3_ASSOC)) {
+        $s = new DateTime($h['hold_start'] . '-01');
+        $e = new DateTime($h['hold_end'] . '-01');
+        $hp = new DatePeriod($s, new DateInterval('P1M'), $e->modify('+1 month'));
+        foreach ($hp as $m) $held_months[$m->format('Y-m')] = true;
+    }
+    
+    // Calculate owed, excluding waived + held months
     $total_owed = 0;
     foreach ($period as $dt) {
         $month = $dt->format('Y-m');
-        if (!isset($waived[$month])) $total_owed += $fee;
+        if (!isset($waived[$month]) && !isset($held_months[$month])) $total_owed += $fee;
     }
     
     $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id AND amount>0");
@@ -1100,6 +1121,81 @@ tbody td{padding:10px 12px;vertical-align:middle}
 </div>
 
 <?php elseif ($page === 'customers'): ?>
+<div class="card" style="margin-top:20px">
+  <div class="card-header">
+    <div class="card-header-title"><i class="fas fa-umbrella"></i> Vacation Holds</div>
+  </div>
+  <div class="card-body">
+    <?php if (isMaster()): ?>
+    <div style="background:rgba(59,130,246,.05);padding:12px;border-radius:8px;margin-bottom:16px">
+      <h4 style="margin:0 0 12px 0;font-size:14px">➕ Add Vacation Hold</h4>
+      <form method="post" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;margin-top:10px">
+        <div>
+          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Customer</label>
+          <div style="position:relative">
+            <input type="text" id="holdCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px">
+            <input type="hidden" name="customer_id" id="holdCustId" required>
+            <div id="holdCustSug" style="position:absolute;top:100%;left:0;right:0;background:#1a1a2e;border:1px solid #2d2d44;border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)"></div>
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Start</label>
+          <input type="month" name="hold_start" class="form-control" required style="font-size:13px">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">End</label>
+          <input type="month" name="hold_end" class="form-control" required style="font-size:13px">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Reason</label>
+          <input type="text" name="hold_reason" class="form-control" style="font-size:13px" placeholder="Vacation...">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <input type="hidden" name="action" value="add_hold">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add</button>
+        </div>
+      </form>
+    </div>
+    <?php endif; ?>
+
+    <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:12px">
+      <thead><tr style="background:var(--border)">
+        <th style="padding:8px;text-align:left">Customer</th>
+        <th style="padding:8px;text-align:left">Period</th>
+        <th style="padding:8px;text-align:left">Reason</th>
+        <?php if(isMaster()): ?><th style="padding:8px;width:80px">Action</th><?php endif; ?>
+      </tr></thead>
+      <tbody>
+      <?php 
+      $holds = $db->query("SELECT vh.*, c.name FROM vacation_holds vh JOIN customers c ON vh.customer_id=c.id ORDER BY vh.hold_start DESC");
+      if ($holds) {
+        $found = false;
+        while ($h = $holds->fetchArray(SQLITE3_ASSOC)): 
+          $found = true;
+      ?>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px"><strong><?= htmlspecialchars($h['name']) ?></strong></td>
+        <td style="padding:8px"><?= $h['hold_start'] ?> → <?= $h['hold_end'] ?></td>
+        <td style="padding:8px;color:var(--text-muted)"><?= htmlspecialchars($h['reason']) ?></td>
+        <?php if(isMaster()): ?>
+        <td style="padding:8px;text-align:center">
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="delete_hold">
+            <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+            <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Remove?')"><i class="fas fa-trash"></i></button>
+          </form>
+        </td>
+        <?php endif; ?>
+      </tr>
+      <?php endwhile;
+        if (!$found) echo '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted)">No active holds</td></tr>';
+      }
+      ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header">
     <div class="card-header-title"><i class="fas fa-search"></i> Search</div>
@@ -1183,6 +1279,10 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <div class="modal-body-custom" id="histContent"></div>
   </div>
 </div>
+
+
+
+
 
 <?php elseif ($page === 'report'): ?>
 <div class="card">
@@ -1622,5 +1722,26 @@ function filterBalance(query) {
     row.style.display = text.includes(query) ? "" : "none";
   });
 }
-</script></body>
+</script><script>
+(function(){
+var inp=document.getElementById("holdCustSearch");if(!inp)return;
+var sug=document.getElementById("holdCustSug"),hid=document.getElementById("holdCustId");
+inp.addEventListener("input",function(){
+  var q=this.value.trim();hid.value="";
+  if(q.length<1){sug.style.display="none";return;}
+  fetch("search_customers.php?q="+encodeURIComponent(q)).then(r=>r.json()).then(d=>{
+    if(!d.length){sug.innerHTML="<div style='padding:10px;font-size:12px;color:#a0a0c0'>No match</div>";sug.style.display="block";return;}
+    sug.innerHTML=d.map(x=>"<div class='hold-sug-item' data-id='"+x.id+"' style='padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #2d2d44;color:#eef2ff'><strong>"+x.name+"</strong> <span style='color:#a0a0c0;font-size:11px'>"+x.mobile+"</span></div>").join("");
+    sug.style.display="block";
+    sug.querySelectorAll(".hold-sug-item").forEach(el=>{
+      el.onclick=function(){hid.value=this.dataset.id;inp.value=this.querySelector("strong").textContent;sug.style.display="none";};
+      el.onmouseover=function(){this.style.background="rgba(59,130,246,.15)";};
+      el.onmouseout=function(){this.style.background="";};
+    });
+  });
+});
+document.addEventListener("click",function(e){if(sug&&!sug.contains(e.target)&&e.target!==inp)sug.style.display="none";});
+})();
+</script>
+</body>
 </html>

@@ -11,7 +11,7 @@ $current_month = $today->format('Y-m');
 $openwa_url = "http://localhost:2785/api/sessions/5ecb7afd-213d-4c73-9ea0-e922d02e5ecf/messages/send-text";
 $api_key = "dev-admin-key";
 
-$customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date FROM customers WHERE status='active'");
+$customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date, monthly_fee FROM customers WHERE status='active'");
 
 $sent = 0;
 $skipped = 0;
@@ -30,16 +30,28 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $now = new DateTime(date('Y-m-01'));
     $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
     
+    // Get vacation hold months for this customer
+    $held = [];
+    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id={$c['id']}");
+    while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
+        $hs = new DateTime($h['hold_start'] . '-01');
+        $he = new DateTime($h['hold_end'] . '-01');
+        $he->modify('+1 month');
+        foreach (new DatePeriod($hs, new DateInterval('P1M'), $he) as $hm) $held[$hm->format('Y-m')] = true;
+    }
+    
+    $fee = max(1, floatval($c['monthly_fee'] ?: 30));
     $total_owed = 0;
     $total_paid = 0;
     $unpaid_months = [];
     
     foreach ($period as $dt) {
         $month_year = $dt->format('Y-m');
-        $total_owed += 30;
+        if (isset($held[$month_year])) continue; // Skip vacation months
+        $total_owed += $fee;
         $paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id={$c['id']} AND month_year='$month_year'");
         $total_paid += $paid;
-        $due = 30 - $paid;
+        $due = $fee - $paid;
         if ($due > 0) {
             $unpaid_months[] = $dt->format('F Y') . ": $due SAR";
         }
