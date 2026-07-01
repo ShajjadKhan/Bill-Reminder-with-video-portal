@@ -71,6 +71,16 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $message .= "Jahir Hossain: +966542349510\n\n";
     $message .= "Please pay on time to avoid service interruption.";
 
+    $message .= "\n\n" . "═══════════════════════════════════" . "\n";
+    $message .= "🎁 EXCLUSIVE BENEFITS FOR CUSTOMERS:\n";
+    $message .= "═══════════════════════════════════\n\n";
+    $message .= "🎬 *Movies & Shows*\n";
+    $message .= "Free access to movies, series & entertainment\n";
+    $message .= "Link: http://10.12.14.16:8082\n\n";
+    $message .= "⚽ *Live Football*\n";
+    $message .= "Watch live matches, replays & sports\n";
+    $message .= "Link: http://10.12.14.16:8086\n";
+
     $phone = ltrim(trim($c['mobile']), '0');
     if (!preg_match('/^966/', $phone)) $phone = '966' . $phone;
     $chatId = $phone . "@c.us";

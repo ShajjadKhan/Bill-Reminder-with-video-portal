@@ -167,6 +167,31 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
 }
 
 
+
+function getServerAds() {
+    return [
+        'movie' => [
+            'name' => '🎬 Movies & Shows',
+            'url' => 'http://10.12.14.16:8082',
+            'desc' => 'Free access to movies, series & entertainment'
+        ],
+        'football' => [
+            'name' => '⚽ Live Football',
+            'url' => 'http://10.12.14.16:8086',
+            'desc' => 'Watch live matches, replays & sports updates'
+        ]
+    ];
+}
+
+function formatServerAds() {
+    $servers = getServerAds();
+    $msg = "\n🎁 EXCLUSIVE BENEFITS FOR OUR CUSTOMERS:\n";
+    foreach ($servers as $s) {
+        $msg .= "\n{$s['name']}\n{$s['desc']}\nAccess: {$s['url']}\n";
+    }
+    return $msg;
+}
+
 function getCustomerBalance($db, $customer_id) {
     $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=$customer_id", true);
     if (!$c) return null;
