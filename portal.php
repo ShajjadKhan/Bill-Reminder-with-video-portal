@@ -1225,7 +1225,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <span class="badge badge-blue"><?php $all_custs = $db->query("SELECT COUNT(*) FROM customers WHERE status='active'"); echo $all_custs->fetchArray(SQLITE3_NUM)[0]; ?> active</span>
   </div>
   <div style="padding:12px 0 8px 0">
-    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name or phone…" style="font-size:13px">
+    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name or phone…" style="font-size:13px" onkeyup="filterBalance(this.value)">
   </div>
   <div class="table-wrap" style="max-height:70vh;overflow-y:auto">
     <table>
@@ -1611,5 +1611,16 @@ inp.addEventListener("input",function(){
 document.addEventListener("click",function(e){if(!sug.contains(e.target)&&e.target!==inp)sug.style.display="none";});
 })();
 </script>
-</body>
+<script>
+function filterBalance(query) {
+  query = query.toLowerCase();
+  var tbody = document.querySelector("table tbody");
+  if (!tbody) return;
+  var rows = tbody.querySelectorAll("tr");
+  rows.forEach(function(row) {
+    var text = row.textContent.toLowerCase();
+    row.style.display = text.includes(query) ? "" : "none";
+  });
+}
+</script></body>
 </html>
