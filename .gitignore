@@ -6,3 +6,10 @@ bills.db.backup_*
 *.broken
 *.old
 upload_server.py
+*.db
+*.db-*
+bills_BACKUP_*
+bills_before_*
+portal_BACKUP_*.php
+portal_backup_*.php
+reminder_log.txt
