@@ -1200,6 +1200,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
               <input type="number" name="amount" value="<?= $col['amount'] ?>" step="0.5" style="width:80px" class="form-control">
               <button type="submit" class="btn btn-primary btn-xs"><i class="fas fa-save"></i></button>
             </form>
+            <a href="?reallocate_collection=<?= $col['id'] ?>&page=report" class="btn btn-warning btn-xs" onclick="return confirm('Split this lump entry into monthly chunks?')"><i class="fas fa-sitemap"></i></a>
             <a href="?delete_collection=<?= $col['id'] ?>&page=report" class="btn btn-danger btn-xs" onclick="return confirm('Delete this record?')"><i class="fas fa-trash"></i></a>
           </td>
           <?php endif; ?>
