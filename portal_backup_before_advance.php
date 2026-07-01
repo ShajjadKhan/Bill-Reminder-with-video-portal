@@ -332,51 +332,7 @@ if (isLoggedIn() && isMaster() && $action === 'reset_password') {
 
 // ============================================================
 // COLLECTION
-// ALLOCATE ADVANCE PAYMENT - split large payment across future months
-if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_POST['action'] == 'allocate_advance') {
-    $customer_id = intval($_POST['customer_id']);
-    $total_advance = floatval($_POST['advance_amount']);
-    $customer = $db->querySingle("SELECT name, mobile FROM customers WHERE id=$customer_id", true);
-    if (!$customer || $total_advance <= 0) { $_SESSION['error'] = "Invalid"; header('Location: portal.php?page=collections'); exit; }
-    $last_col = $db->querySingle("SELECT MAX(month_year) as last_month FROM collections WHERE customer_id=$customer_id");
-    if (is_null($last_col['last_month'])) { $start_month = new DateTime($customer['billing_start_date']); } else { $start_month = new DateTime($last_col['last_month'] . '-01'); $start_month->modify('+1 month'); }
-    $months_to_cover = intval($total_advance / 30);
-    $remaining = $total_advance - ($months_to_cover * 30);
-    for ($i = 0; $i < $months_to_cover; $i++) { $month_year = $start_month->format('Y-m'); $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', 30, {$_SESSION['user_id']}, datetime('now'))"); $start_month->modify('+1 month'); }
-    if ($remaining > 0) { $month_year = $start_month->format('Y-m'); $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', $remaining, {$_SESSION['user_id']}, datetime('now'))"); }
-    logAction($db, $_SESSION['user_id'], "ALLOCATE_ADVANCE", "$total_advance for {$customer['name']}");
-    $_SESSION['msg'] = "Advance: $months_to_cover months + $remaining SAR";
-    header('Location: portal.php?page=collections');
-    exit;
-}
 // ============================================================
-
-// ALLOCATE ADVANCE PAYMENT
-if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_POST['action'] == 'allocate_advance') {
-    $customer_id = intval($_POST['customer_id']);
-    $total_advance = floatval($_POST['advance_amount']);
-    $customer = $db->querySingle("SELECT name FROM customers WHERE id=$customer_id", true);
-    if (!$customer || $total_advance <= 0) { $_SESSION['msg'] = "Invalid"; header('Location: portal.php?page=collections'); exit; }
-    $last_col = $db->querySingle("SELECT MAX(month_year) FROM collections WHERE customer_id=$customer_id");
-    $start = $last_col ? new DateTime($last_col . '-01') : new DateTime($customer['billing_start_date']);
-    if ($last_col) $start->modify('+1 month');
-    $full_months = intval($total_advance / 30);
-    $remainder = $total_advance - ($full_months * 30);
-    for ($i=0; $i<$full_months; $i++) {
-        $m = $start->format('Y-m');
-        $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$m', 30, {$_SESSION['user_id']}, datetime('now'))");
-        $start->modify('+1 month');
-    }
-    if ($remainder > 0) {
-        $m = $start->format('Y-m');
-        $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$m', $remainder, {$_SESSION['user_id']}, datetime('now'))");
-    }
-    logAction($db, $_SESSION['user_id'], "ALLOCATE_ADVANCE", "$total_advance SAR for customer $customer_id");
-    $_SESSION['msg'] = "Allocated: $full_months months + $remainder SAR";
-    header('Location: portal.php?page=collections');
-    exit;
-}
-
 if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
     $customer_id = intval($_POST['customer_id']);
     $months      = $_POST['months']  ?? [];
@@ -887,36 +843,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
       <div class="search-results" id="collResults" style="display:none"></div>
     </div>
   </div>
-
 </div>
-<div class="card" style="margin-bottom:20px;border-left:4px solid var(--info)">
-  <div class="card-header" style="background:rgba(59,130,246,.05)">
-    <div class="card-header-title"><i class="fas fa-plus-circle"></i> Record Advance Payment</div>
-  </div>
-  <div class="card-body">
-    <form method="post" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
-      <input type="hidden" name="action" value="allocate_advance">
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Customer</label>
-        <select name="customer_id" class="form-control" required style="font-size:13px">
-          <option value="">-- Select customer --</option>
-          <?php foreach($db->query("SELECT id, name, mobile FROM customers WHERE status='active' ORDER BY name") as $cust): ?>
-          <option value="<?= $cust['id'] ?>"><?= htmlspecialchars($cust['name']) ?> (<?= $cust['mobile'] ?>)</option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Advance Amount (SAR)</label>
-        <input type="number" name="advance_amount" class="form-control" placeholder="e.g., 780" required min="1" step="1" style="font-size:13px">
-      </div>
-      <div style="text-align:center;font-size:12px;color:var(--text-muted)">
-        <strong>Auto-splits into 30 SAR monthly payments</strong>
-      </div>
-      <button type="submit" class="btn btn-info"><i class="fas fa-check"></i> Allocate</button>
-    </form>
-  </div>
-</div>
-
 <div class="card">
   <div class="card-header">
     <div class="card-header-title"><i class="fas fa-clock"></i> Pending Bills (oldest first)</div>
