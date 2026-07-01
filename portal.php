@@ -1224,6 +1224,9 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <div class="card-header-title"><i class="fas fa-scale-balanced"></i> Customer Balance Sheet</div>
     <span class="badge badge-blue"><?php $all_custs = $db->query("SELECT COUNT(*) FROM customers WHERE status='active'"); echo $all_custs->fetchArray(SQLITE3_NUM)[0]; ?> active</span>
   </div>
+  <div style="padding:12px 0 8px 0">
+    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name or phone…" style="font-size:13px">
+  </div>
   <div class="table-wrap" style="max-height:70vh;overflow-y:auto">
     <table>
       <thead><tr>

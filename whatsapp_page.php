@@ -238,7 +238,7 @@ function broadcast() {
 }
 
 checkStatus();
-setInterval(checkStatus, 30000);
+// Auto-refresh disabled: setInterval(checkStatus, 30000);
 </script>
 </body>
 </html>
