@@ -985,7 +985,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
         <div style="position:relative">
           <input type="text" id="advCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px">
           <input type="hidden" name="customer_id" id="advCustId" required>
-          <div id="advCustSug" style="position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:50;display:none"></div>
+          <div id="advCustSug" style="position:absolute;top:100%;left:0;right:0;background:#1a1a2e;border:1px solid #2d2d44;border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)"></div>
         </div>
       </div>
       <div>
