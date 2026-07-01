@@ -201,12 +201,19 @@ function getCustomerBalance($db, $customer_id) {
     $now = new DateTime(date('Y-m-01'));
     $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
     
+    // Get waived months (amount = 0)
+    $waived_res = $db->query("SELECT month_year FROM collections WHERE customer_id=$customer_id AND amount=0");
+    $waived = [];
+    while ($w = $waived_res->fetchArray(SQLITE3_ASSOC)) $waived[$w['month_year']] = true;
+    
+    // Calculate owed, excluding waived months
     $total_owed = 0;
     foreach ($period as $dt) {
-        $total_owed += $fee;
+        $month = $dt->format('Y-m');
+        if (!isset($waived[$month])) $total_owed += $fee;
     }
     
-    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id");
+    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id AND amount>0");
     $balance = $total_paid - $total_owed;
     
     return [
