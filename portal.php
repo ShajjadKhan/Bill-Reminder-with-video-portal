@@ -248,7 +248,24 @@ function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_it
     } else {
         $msg .= "✅ All bills are paid. Thank you!\n";
     }
-    $msg .= "\n🎬 Movies: $movie\n\n";
+    // Balance summary (credit / owing)
+    $bal = getCustomerBalance($db, $customer_id);
+    if ($bal) {
+        $msg .= "\n📊 Account Balance:\n";
+        if ($bal["balance"] > 0) {
+            $prepaid_months = intval($bal["balance"] / 30);
+            $msg .= "  Credit: +".number_format($bal["balance"],2)." SAR";
+            if ($prepaid_months > 0) $msg .= " ($prepaid_months month".($prepaid_months>1?"s":"")." prepaid)";
+            $msg .= "\n";
+        } elseif ($bal["balance"] == 0) {
+            $msg .= "  Fully settled ✅\n";
+        } else {
+            $msg .= "  Due: ".number_format(abs($bal["balance"]),2)." SAR\n";
+        }
+    }
+    $msg .= "\n🎁 Free for our customers:\n";
+    $msg .= "  🎬 Movies: $movie\n";
+    $msg .= "  ⚽ Live Football: http://10.12.14.16:8086\n\n";
     $msg .= "📞 Support (24/7):\n";
     $msg .= "  $s1n: $s1p\n  $s2n: $s2p\n  $s3n: $s3p\n\n";
     $msg .= "Thank you for your payment! 🙏";
@@ -760,7 +777,21 @@ tbody td{padding:10px 12px;vertical-align:middle}
   .wa-grid{grid-template-columns:1fr !important}
 }
 
+@media(max-width:400px){
+  .advance-form{grid-template-columns:1fr !important}
+  .advance-form button{width:100%}
+  .table-wrap table{font-size:11px}
+  .table-wrap th,.table-wrap td{padding:6px 4px}
+  .badge{font-size:9px;padding:2px 6px}
+  .nav-tabs-wrap a{padding:4px 7px;font-size:10px}
+  .stat-value{font-size:17px}
+  .card-header-title{font-size:13px}
+  h1,h2,h3{font-size:16px}
+  .modal-box{margin:4px;width:calc(100% - 8px)}
+}
 @media(max-width:480px){
+  .advance-form{grid-template-columns:1fr !important}
+  .advance-form button{width:100%}
   .stats-grid{grid-template-columns:1fr 1fr}
   .topbar{padding:6px 8px;gap:4px;height:auto;flex-wrap:wrap}
   .topbar-brand{order:1}
@@ -947,7 +978,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <div class="card-header-title"><i class="fas fa-plus-circle"></i> Record Advance Payment</div>
   </div>
   <div class="card-body">
-    <form method="post" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+    <form method="post" class="advance-form" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
       <input type="hidden" name="action" value="allocate_advance">
       <div>
         <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Customer</label>
