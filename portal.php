@@ -982,12 +982,11 @@ tbody td{padding:10px 12px;vertical-align:middle}
       <input type="hidden" name="action" value="allocate_advance">
       <div>
         <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Customer</label>
-        <select name="customer_id" class="form-control" required style="font-size:13px">
-          <option value="">-- Select customer --</option>
-          <?php foreach($db->query("SELECT id, name, mobile FROM customers WHERE status='active' ORDER BY name") as $cust): ?>
-          <option value="<?= $cust['id'] ?>"><?= htmlspecialchars($cust['name']) ?> (<?= $cust['mobile'] ?>)</option>
-          <?php endforeach; ?>
-        </select>
+        <div style="position:relative">
+          <input type="text" id="advCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px">
+          <input type="hidden" name="customer_id" id="advCustId" required>
+          <div id="advCustSug" style="position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:50;display:none"></div>
+        </div>
       </div>
       <div>
         <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Advance Amount (SAR)</label>
@@ -1579,6 +1578,27 @@ function sendTestMsg(){const phone=document.getElementById('test-phone').value.t
 if(document.getElementById('wa-status-display'))checkWaStatus();
 function editMaster(id,fn,un){document.getElementById('master_id').value=id;document.getElementById('master_fn').value=fn;document.getElementById('master_un').value=un;openModal('editMasterModal');}
 function resetPass(id){document.getElementById('reset_uid').value=id;openModal('resetPassModal');}
+</script>
+<script>
+(function(){
+var inp=document.getElementById("advCustSearch");if(!inp)return;
+var sug=document.getElementById("advCustSug"),hid=document.getElementById("advCustId");
+inp.addEventListener("input",function(){
+  var q=this.value.trim();hid.value="";
+  if(q.length<1){sug.style.display="none";return;}
+  fetch("search_customers.php?q="+encodeURIComponent(q)).then(r=>r.json()).then(d=>{
+    if(!d.length){sug.innerHTML="<div style='padding:10px;font-size:12px;color:var(--text-muted)'>No match</div>";sug.style.display="block";return;}
+    sug.innerHTML=d.map(x=>"<div class='adv-sug-item' data-id='"+x.id+"' style='padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)'><strong>"+x.name+"</strong> <span style='color:var(--text-muted);font-size:11px'>"+x.mobile+"</span></div>").join("");
+    sug.style.display="block";
+    sug.querySelectorAll(".adv-sug-item").forEach(el=>{
+      el.onclick=function(){hid.value=this.dataset.id;inp.value=this.querySelector("strong").textContent;sug.style.display="none";};
+      el.onmouseover=function(){this.style.background="rgba(59,130,246,.1)";};
+      el.onmouseout=function(){this.style.background="";};
+    });
+  });
+});
+document.addEventListener("click",function(e){if(!sug.contains(e.target)&&e.target!==inp)sug.style.display="none";});
+})();
 </script>
 </body>
 </html>
