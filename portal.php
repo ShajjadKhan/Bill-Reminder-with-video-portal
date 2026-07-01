@@ -166,6 +166,33 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
     return $unpaid;
 }
 
+
+function getCustomerBalance($db, $customer_id) {
+    $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=$customer_id", true);
+    if (!$c) return null;
+    
+    $fee = floatval($c['monthly_fee'] ?: 30);
+    $start = new DateTime($c['billing_start_date']);
+    $now = new DateTime(date('Y-m-01'));
+    $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
+    
+    $total_owed = 0;
+    foreach ($period as $dt) {
+        $total_owed += $fee;
+    }
+    
+    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id");
+    $balance = $total_paid - $total_owed;
+    
+    return [
+        'total_owed' => $total_owed,
+        'total_paid' => $total_paid,
+        'balance' => $balance,
+        'has_credit' => $balance >= 0,
+        'owes' => abs(min(0, $balance))
+    ];
+}
+
 function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_items, $total_paid) {
     $current_month = date('Y-m');
     $movie  = getSetting($db,'movie_server');
@@ -791,6 +818,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <a href="?page=customers"   class="<?= $page=='customers'  ?'active':'' ?>"><i class="fas fa-users"></i> Customers</a>
     <a href="?page=files"       class="<?= $page=='files'      ?'active':'' ?>"><i class="fas fa-film"></i> Movies</a>
     <a href="?page=report"      class="<?= $page=='report'     ?'active':'' ?>"><i class="fas fa-file-invoice"></i> Report</a>
+    <a href="?page=balance"     class="<?= $page=='balance'    ?'active':'' ?>"><i class="fas fa-scale-balanced"></i> Balance Sheet</a>
     <a href="whatsapp_page.php"    class="<?= $page=='whatsapp'   ?'active':'' ?>"><i class="fab fa-whatsapp"></i> WhatsApp</a>
     <?php if (isMaster()): ?>
     <a href="?page=audit"       class="<?= $page=='audit'      ?'active':'' ?>"><i class="fas fa-history"></i> Audit</a>
@@ -1124,6 +1152,65 @@ tbody td{padding:10px 12px;vertical-align:middle}
       <?php endwhile; ?>
       </tbody>
     </table>
+  </div>
+</div>
+
+<?php elseif ($page === 'balance'): ?>
+<div class="card">
+  <div class="card-header">
+    <div class="card-header-title"><i class="fas fa-scale-balanced"></i> Customer Balance Sheet</div>
+    <span class="badge badge-blue"><?php $all_custs = $db->query("SELECT COUNT(*) FROM customers WHERE status='active'"); echo $all_custs->fetchArray(SQLITE3_NUM)[0]; ?> active</span>
+  </div>
+  <div class="table-wrap" style="max-height:70vh;overflow-y:auto">
+    <table>
+      <thead><tr>
+        <th>#</th>
+        <th>Customer</th>
+        <th>Mobile</th>
+        <th>Total Owed (SAR)</th>
+        <th>Total Paid (SAR)</th>
+        <th>Balance</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>
+      <?php 
+      $custs = $db->query("SELECT id, name, mobile FROM customers WHERE status='active' ORDER BY name");
+      $idx = 0;
+      $grand_owed = 0;
+      $grand_paid = 0;
+      while($c = $custs->fetchArray(SQLITE3_ASSOC)): 
+        $bal = getCustomerBalance($db, $c['id']);
+        $grand_owed += $bal['total_owed'];
+        $grand_paid += $bal['total_paid'];
+        $idx++;
+        $status = $bal['balance'] > 0 ? 'CREDIT' : ($bal['balance'] == 0 ? 'SETTLED' : 'OWING');
+        $status_color = $bal['balance'] > 0 ? 'badge-green' : ($bal['balance'] == 0 ? 'badge-blue' : 'badge-red');
+      ?>
+        <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : 'background:rgba(34,197,94,.04)' ?>">
+          <td class="mono" style="color:var(--text-muted)"><?= $idx ?></td>
+          <td><strong><?= htmlspecialchars($c['name']) ?></strong><br><small style="color:var(--text-muted)"><?= $c['mobile'] ?></small></td>
+          <td class="mono"><?= $c['mobile'] ?></td>
+          <td class="mono"><strong><?= number_format($bal['total_owed'], 2) ?></strong></td>
+          <td class="mono"><strong style="color:var(--success)"><?= number_format($bal['total_paid'], 2) ?></strong></td>
+          <td class="mono"><strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal['balance'], 2) ?> SAR</strong></td>
+          <td><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
+        </tr>
+      <?php endwhile; ?>
+      <tr class="table-total">
+        <td colspan="3"><strong>TOTAL</strong></td>
+        <td class="mono"><strong><?= number_format($grand_owed, 2) ?></strong></td>
+        <td class="mono"><strong style="color:var(--success)"><?= number_format($grand_paid, 2) ?></strong></td>
+        <td class="mono"><strong style="<?= ($grand_paid - $grand_owed) > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($grand_paid - $grand_owed, 2) ?> SAR</strong></td>
+        <td></td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer" style="background:rgba(0,0,0,.02);padding:12px;font-size:12px;color:var(--text-muted)">
+    <strong>Legend:</strong> 
+    <span style="margin-right:20px"><span class="badge badge-green" style="font-size:10px">CREDIT</span> = Overpaid (has prepaid months)</span>
+    <span style="margin-right:20px"><span class="badge badge-blue" style="font-size:10px">SETTLED</span> = Current balance is zero</span>
+    <span><span class="badge badge-red" style="font-size:10px">OWING</span> = Unpaid balance remains</span>
   </div>
 </div>
 
