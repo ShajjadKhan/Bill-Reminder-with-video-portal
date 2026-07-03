@@ -304,3 +304,9 @@ Reminder check completed.
 Reminder sent to ZEESHAN (0545481079) - due day 3, days left: 2
 Reminder sent to Pius (0532076903) - due day 6, days left: 5
 Reminder check completed.
+
+Done. Would send: 0 | Skipped (paid): 0
+SENT to Nelson Mendala (0545160916) - due day 5, days left: 2, total due: 80 SAR
+SENT to Kader (0561820118) - due day 5, days left: 2, total due: 60 SAR
+
+Done. Would send: 2 | Skipped (paid): 0

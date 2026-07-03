@@ -435,7 +435,7 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
     $total_advance = floatval($_POST['advance_amount']);
     $customer = $db->querySingle("SELECT name, mobile FROM customers WHERE id=$customer_id", true);
     if (!$customer || $total_advance <= 0) { $_SESSION['error'] = "Invalid"; header('Location: portal.php?page=collections'); exit; }
-    $last_col = $db->querySingle("SELECT MAX(month_year) as last_month FROM collections WHERE customer_id=$customer_id");
+    $last_col = $db->querySingle("SELECT MAX(month_year) as last_month FROM collections WHERE customer_id=$customer_id", true);
     if (is_null($last_col['last_month'])) { $start_month = new DateTime($customer['billing_start_date']); } else { $start_month = new DateTime($last_col['last_month'] . '-01'); $start_month->modify('+1 month'); }
     $months_to_cover = intval($total_advance / 30);
     $remaining = $total_advance - ($months_to_cover * 30);
@@ -443,36 +443,24 @@ if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_PO
     if ($remaining > 0) { $month_year = $start_month->format('Y-m'); $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', $remaining, {$_SESSION['user_id']}, datetime('now'))"); }
     logAction($db, $_SESSION['user_id'], "ALLOCATE_ADVANCE", "$total_advance for {$customer['name']}");
     $_SESSION['msg'] = "Advance: $months_to_cover months + $remaining SAR";
+    
+    // Send WhatsApp receipt for advance payment
+    if ($customer['mobile']) {
+        $msg = "✅ ADVANCE PAYMENT RECEIVED\n";
+        $msg .= "Customer: {$customer['name']}\n";
+        $msg .= "Date: " . date("d M Y H:i") . "\n";
+        $msg .= "💳 Amount: $total_advance SAR\n";
+        $msg .= "📅 Covers: $months_to_cover months";
+        if ($remaining > 0) $msg .= " + $remaining SAR";
+        $msg .= "\n✅ Payment received. Thank you!\n";
+        $msg .= "\n🎁 Free for our customers:\n🎬 Movies: http://10.12.14.16:8082\n⚽ Live Football: http://10.12.14.16:8086";
+        sendWhatsAppMessage($db, $customer['mobile'], $msg);
+    }
+    
     header('Location: portal.php?page=collections');
     exit;
 }
-// ============================================================
 
-// ALLOCATE ADVANCE PAYMENT
-if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_POST['action'] == 'allocate_advance') {
-    $customer_id = intval($_POST['customer_id']);
-    $total_advance = floatval($_POST['advance_amount']);
-    $customer = $db->querySingle("SELECT name FROM customers WHERE id=$customer_id", true);
-    if (!$customer || $total_advance <= 0) { $_SESSION['msg'] = "Invalid"; header('Location: portal.php?page=collections'); exit; }
-    $last_col = $db->querySingle("SELECT MAX(month_year) FROM collections WHERE customer_id=$customer_id");
-    $start = $last_col ? new DateTime($last_col . '-01') : new DateTime($customer['billing_start_date']);
-    if ($last_col) $start->modify('+1 month');
-    $full_months = intval($total_advance / 30);
-    $remainder = $total_advance - ($full_months * 30);
-    for ($i=0; $i<$full_months; $i++) {
-        $m = $start->format('Y-m');
-        $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$m', 30, {$_SESSION['user_id']}, datetime('now'))");
-        $start->modify('+1 month');
-    }
-    if ($remainder > 0) {
-        $m = $start->format('Y-m');
-        $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$m', $remainder, {$_SESSION['user_id']}, datetime('now'))");
-    }
-    logAction($db, $_SESSION['user_id'], "ALLOCATE_ADVANCE", "$total_advance SAR for customer $customer_id");
-    $_SESSION['msg'] = "Allocated: $full_months months + $remainder SAR";
-    header('Location: portal.php?page=collections');
-    exit;
-}
 
 if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
     $customer_id = intval($_POST['customer_id']);
@@ -545,9 +533,8 @@ if (isLoggedIn() && isAdmin() && $action === 'save_customer') {
 if (isLoggedIn() && isAdmin() && isset($_GET['delete_customer'])) {
     $id = intval($_GET['delete_customer']);
     $c  = $db->querySingle("SELECT name FROM customers WHERE id=$id",true);
-    $db->exec("DELETE FROM customers WHERE id=$id");
-    $db->exec("DELETE FROM collections WHERE customer_id=$id");
-    logAction($db,$_SESSION['user_id'],'DELETE_CUSTOMER',"Deleted {$c['name']}");
+    $db->exec("UPDATE customers SET status='deleted' WHERE id=$id"); // Soft delete - preserves collection history
+        logAction($db,$_SESSION['user_id'],'DELETE_CUSTOMER',"Deleted {$c['name']}");
     header('Location: portal.php?page=customers'); exit;
 }
 
@@ -1229,7 +1216,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <td><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>')"><i class="fab fa-whatsapp"></i></button></td>
           <td style="white-space:nowrap">
             <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= $c['building'] ?>','<?= $c['apartment'] ?>','<?= $c['room'] ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>)"><i class="fas fa-edit"></i></button>
-            <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Delete <?= htmlspecialchars(addslashes($c['name'])) ?>? This removes all their collection records too.')"><i class="fas fa-trash"></i></a>
+            <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
           </td>
         </tr>
       <?php }?>

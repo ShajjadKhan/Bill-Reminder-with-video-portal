@@ -200,7 +200,11 @@ function reconnect() {
   if (!confirm('Reconnect WhatsApp session? Current session will restart and a new QR will appear.')) return;
   show('statusResult', 'Restarting session… wait 5 seconds', true);
   fetch('whatsapp_page.php?ajax=reconnect').then(r => r.json()).then(() => {
-    setTimeout(() => { checkStatus(); show('statusResult', 'Session restarted. If QR appears below, scan it.', true); }, 5000);
+    setTimeout(() => { 
+      checkStatus(); 
+      setTimeout(() => { loadQR(); }, 2000);
+      show('statusResult', 'Session restarted. Scan the QR below.', true); 
+    }, 5000);
   });
 }
 
