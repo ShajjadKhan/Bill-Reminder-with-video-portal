@@ -2,6 +2,15 @@
 $db = new SQLite3('/home/tserver/billing_reminder/bills.db');
 date_default_timezone_set('Asia/Riyadh');
 
+function getSetting($db, $key) {
+    $v = $db->querySingle("SELECT value FROM settings WHERE key='" . SQLite3::escapeString($key) . "'");
+    return $v ?: '';
+}
+$movie_server = getSetting($db, 'movie_server');
+$s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
+$s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
+$s3n = getSetting($db, 'support_3_name'); $s3p = getSetting($db, 'support_3_phone');
+
 $today = new DateTime();
 $target_5 = (clone $today)->modify('+5 days');
 $target_2 = (clone $today)->modify('+2 days');
@@ -11,7 +20,7 @@ $current_month = $today->format('Y-m');
 $openwa_url = "http://localhost:2785/api/sessions/5ecb7afd-213d-4c73-9ea0-e922d02e5ecf/messages/send-text";
 $api_key = "dev-admin-key";
 
-$customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date, monthly_fee FROM customers WHERE status='active'");
+$customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date, monthly_fee, pay_by_day FROM customers WHERE status='active'");
 
 $sent = 0;
 $skipped = 0;
@@ -30,14 +39,21 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $now = new DateTime(date('Y-m-01'));
     $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
     
-    // Get vacation hold months for this customer
-    $held = [];
+    // Vacation holds: full dates, NULL end = still away
+    $vholds = [];
+    $on_vacation_now = false;
+    $today_dt = new DateTime(date('Y-m-d'));
     $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id={$c['id']}");
     while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
-        $hs = new DateTime($h['hold_start'] . '-01');
-        $he = new DateTime($h['hold_end'] . '-01');
-        $he->modify('+1 month');
-        foreach (new DatePeriod($hs, new DateInterval('P1M'), $he) as $hm) $held[$hm->format('Y-m')] = true;
+        $vs = new DateTime($h['hold_start']);
+        $ve = $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'));
+        $vholds[] = ['s' => $vs, 'e' => $ve];
+        if (!$h['hold_end'] && $today_dt >= $vs) $on_vacation_now = true;
+    }
+    if ($on_vacation_now) {
+        echo "SKIPPED (on vacation): {$c['name']}\n";
+        $skipped++;
+        continue;
     }
     
     $fee = max(1, floatval($c['monthly_fee'] ?: 30));
@@ -47,11 +63,22 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     
     foreach ($period as $dt) {
         $month_year = $dt->format('Y-m');
-        if (isset($held[$month_year])) continue; // Skip vacation months
-        $total_owed += $fee;
+        $mStart = new DateTime($month_year . '-01');
+        $mEnd = clone $mStart; $mEnd->modify('last day of this month');
+        $dim = (int)$mEnd->format('j');
+        $billable = 0; $d = clone $mStart;
+        while ($d <= $mEnd) {
+            $oh = false;
+            foreach ($vholds as $vh) { if ($d >= $vh['s'] && $d <= $vh['e']) { $oh = true; break; } }
+            if (!$oh) $billable++;
+            $d->modify('+1 day');
+        }
+        if ($billable == 0) continue;
+        $mfee = round($fee * $billable / $dim, 2);
+        $total_owed += $mfee;
         $paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id={$c['id']} AND month_year='$month_year'");
         $total_paid += $paid;
-        $due = $fee - $paid;
+        $due = round($mfee - $paid, 2);
         if ($due > 0) {
             $unpaid_months[] = $dt->format('F Y') . ": $due SAR";
         }
@@ -66,32 +93,56 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
         continue;
     }
 
-    $days_left = $effective_due - (int)$today->format('j');
-    if ($days_left < 0) $days_left = $effective_due + ($days_in_month - (int)$today->format('j'));
-
     $total_due = abs($balance);
-    $months_text = implode("\n", array_map(fn($m) => "- $m", $unpaid_months));
+    $pay_by_day = intval($c['pay_by_day'] ?? 10) ?: 10;
+    $join_dt = new DateTime($c['billing_start_date']);
+    $daily_rate = round($fee / 30, 4);
+    $days_covered = $daily_rate > 0 ? (int)floor($total_paid / $daily_rate) : 0;
 
-    $message = "Dear {$c['name']},\n\n";
-    $message .= "Your internet bill is due in $days_left days (Day {$c['due_day']}).\n\n";
-    $message .= "Unpaid months:\n$months_text\n\n";
-    $message .= "Total due: $total_due SAR\n\n";
-    $message .= "Enjoy free movies: http://10.12.14.16:8082\n\n";
-    $message .= "Technical Support (24/7):\n";
-    $message .= "Cyber Net: +966594266584\n";
-    $message .= "Riyad Hossain: +966546377863\n";
-    $message .= "Jahir Hossain: +966542349510\n\n";
-    $message .= "Please pay on time to avoid service interruption.";
+    // Walk day by day from join date, skipping vacation days, to find "active until" date
+    $active_until = null;
+    if ($days_covered > 0) {
+        $cnt = 0; $cur = clone $join_dt;
+        for ($i = 0; $i < 5000; $i++) {
+            $oh = false;
+            foreach ($vholds as $vh) { if ($cur >= $vh['s'] && $cur <= $vh['e']) { $oh = true; break; } }
+            if (!$oh) {
+                $cnt++;
+                if ($cnt >= $days_covered) { $active_until = clone $cur; break; }
+            }
+            $cur->modify('+1 day');
+        }
+        if (!$active_until) $active_until = clone $cur;
+    } else {
+        $active_until = (clone $join_dt)->modify('-1 day');
+    }
 
-    $message .= "\n\n" . "═══════════════════════════════════" . "\n";
-    $message .= "🎁 EXCLUSIVE BENEFITS FOR CUSTOMERS:\n";
-    $message .= "═══════════════════════════════════\n\n";
-    $message .= "🎬 *Movies & Shows*\n";
-    $message .= "Free access to movies, series & entertainment\n";
-    $message .= "Link: http://10.12.14.16:8082\n\n";
-    $message .= "⚽ *Live Football*\n";
-    $message .= "Watch live matches, replays & sports\n";
-    $message .= "Link: http://10.12.14.16:8086\n";
+    $expired = $active_until < $today;
+    $days_diff = abs($today->diff($active_until)->days);
+
+    $movie_server = getSetting($db, 'movie_server');
+    $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
+    $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
+    $s3n = getSetting($db, 'support_3_name'); $s3p = getSetting($db, 'support_3_phone');
+
+    $message = "📶 CYBERNET ACCOUNT STATUS\n";
+    $message .= "Assalamu Alaikum {$c['name']}!\n\n";
+    $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
+    if ($expired) {
+        $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
+        $message .= "💰 Please recharge $fee SAR to continue service\n";
+    } else {
+        $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
+        $message .= "💰 Please recharge $fee SAR before it ends\n";
+    }
+    $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
+    $message .= "🎬 Movies: $movie_server\n";
+    $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
+    $message .= "📞 Support (24/7):\n";
+    $message .= "$s1n: $s1p\n";
+    if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
+    if ($s3n && $s3p) $message .= "$s3n: $s3p\n";
+    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
 
     $phone = ltrim(trim($c['mobile']), '0');
     if (!preg_match('/^966/', $phone)) $phone = '966' . $phone;

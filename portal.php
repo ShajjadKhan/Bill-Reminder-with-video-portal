@@ -155,24 +155,31 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
     $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=$customer_id GROUP BY month_year");
     $paid = [];
     while ($r = $res->fetchArray(SQLITE3_ASSOC)) $paid[$r['month_year']] = ['total'=>floatval($r['total']),'settled'=>intval($r['settled'])];
-    // Skip vacation hold months
-    $held = [];
+    // Vacation holds: full dates, NULL end = still away
+    $vholds = [];
     $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
     while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
-        $hs = new DateTime($h['hold_start'] . '-01');
-        $he = new DateTime($h['hold_end'] . '-01');
-        $he->modify('+1 month');
-        $hp = new DatePeriod($hs, new DateInterval('P1M'), $he);
-        foreach ($hp as $hm) $held[$hm->format('Y-m')] = true;
+        $vholds[] = ['s' => new DateTime($h['hold_start']), 'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))];
     }
     $unpaid = [];
     foreach ($months as $m) {
-        if (isset($held[$m])) continue;
+        $mStart = new DateTime($m . '-01');
+        $mEnd = clone $mStart; $mEnd->modify('last day of this month');
+        $dim = (int)$mEnd->format('j');
+        $billable = 0; $d = clone $mStart;
+        while ($d <= $mEnd) {
+            $oh = false;
+            foreach ($vholds as $vh) { if ($d >= $vh['s'] && $d <= $vh['e']) { $oh = true; break; } }
+            if (!$oh) $billable++;
+            $d->modify('+1 day');
+        }
+        if ($billable == 0) continue; // whole month on vacation
+        $mfee = round($fee * $billable / $dim, 2);
         $p = $paid[$m] ?? null;
         if ($p && ($p['settled'] == 1 || $p['total'] == 0)) continue;
         $paid_amt = $p ? $p['total'] : 0;
-        $due = round($fee - $paid_amt, 2);
-        if ($due > 0) $unpaid[] = ['month'=>$m,'due'=>$due,'fee'=>$fee];
+        $due = round($mfee - $paid_amt, 2);
+        if ($due > 0) $unpaid[] = ['month'=>$m,'due'=>$due,'fee'=>$mfee];
     }
     return $unpaid;
 }
@@ -204,43 +211,46 @@ function formatServerAds() {
 }
 
 function getCustomerBalance($db, $customer_id) {
-    $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=$customer_id", true);
-    if (!$c) return null;
+    $cu = $db->querySingle("SELECT billing_start_date, monthly_fee FROM customers WHERE id=$customer_id", true);
+    if (!$cu) return null;
     
-    $fee = floatval($c['monthly_fee'] ?: 30);
-    $start = new DateTime($c['billing_start_date']);
-    $now = new DateTime(date('Y-m-01'));
-    $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
+    $daily_rate = round(floatval($cu['monthly_fee'] ?: 30) / 30, 4);
+    $start = new DateTime($cu['billing_start_date']);
+    $today = new DateTime(date('Y-m-d'));
     
-    // Get waived months (amount = 0)
-    $waived_res = $db->query("SELECT month_year FROM collections WHERE customer_id=$customer_id AND amount=0");
-    $waived = [];
-    while ($w = $waived_res->fetchArray(SQLITE3_ASSOC)) $waived[$w['month_year']] = true;
-    
-    // Get vacation holds
+    // Get vacation hold periods (full dates, hold_end NULL = still on vacation)
     $holds_res = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
-    $held_months = [];
+    $holds = [];
     while ($h = $holds_res->fetchArray(SQLITE3_ASSOC)) {
-        $s = new DateTime($h['hold_start'] . '-01');
-        $e = new DateTime($h['hold_end'] . '-01');
-        $hp = new DatePeriod($s, new DateInterval('P1M'), $e->modify('+1 month'));
-        foreach ($hp as $m) $held_months[$m->format('Y-m')] = true;
+        $holds[] = [
+            's' => new DateTime($h['hold_start']),
+            'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))
+        ];
     }
     
-    // Calculate owed, excluding waived + held months
-    $total_owed = 0;
-    foreach ($period as $dt) {
-        $month = $dt->format('Y-m');
-        if (!isset($waived[$month]) && !isset($held_months[$month])) $total_owed += $fee;
+    // Count billable days (start date to yesterday inclusive)
+    $billable_days = 0;
+    $cur = clone $start;
+    $yesterday = clone $today; $yesterday->modify('-1 day');
+    while ($cur <= $yesterday) {
+        $in_hold = false;
+        foreach ($holds as $h) {
+            if ($cur >= $h['s'] && $cur <= $h['e']) { $in_hold = true; break; }
+        }
+        if (!$in_hold) $billable_days++;
+        $cur->modify('+1 day');
     }
     
+    $total_owed = round($billable_days * $daily_rate, 2);
     $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id AND amount>0");
-    $balance = $total_paid - $total_owed;
+    $balance = round($total_paid - $total_owed, 2);
     
     return [
         'total_owed' => $total_owed,
         'total_paid' => $total_paid,
         'balance' => $balance,
+        'billable_days' => $billable_days,
+        'daily_rate' => $daily_rate,
         'has_credit' => $balance >= 0,
         'owes' => abs(min(0, $balance))
     ];
@@ -295,7 +305,10 @@ function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_it
     $msg .= "  🎬 Movies: $movie\n";
     $msg .= "  ⚽ Live Football: http://10.12.14.16:8086\n\n";
     $msg .= "📞 Support (24/7):\n";
-    $msg .= "  $s1n: $s1p\n  $s2n: $s2p\n  $s3n: $s3p\n\n";
+    $msg .= "  $s1n: $s1p\n";
+    if ($s2n && $s2p) $msg .= "  $s2n: $s2p\n";
+    if ($s3n && $s3p) $msg .= "  $s3n: $s3p\n";
+    $msg .= "\n";
     $msg .= "Thank you for your payment! 🙏";
     return $msg;
 }
@@ -514,17 +527,18 @@ if (isLoggedIn() && isAdmin() && $action === 'save_customer') {
     $billing_day = intval($_POST['billing_day']);
     $join_date   = SQLite3::escapeString($_POST['billing_start_date']);
     $monthly_fee = max(1, floatval($_POST['monthly_fee']));
+    $pay_by_day  = max(1, min(31, intval($_POST['pay_by_day'] ?: 10)));
 
     if ($id) {
         $db->exec("UPDATE customers SET name='$name',mobile='$mobile',building='$building',
             apartment='$apartment',room='$room',billing_day=$billing_day,
-            billing_start_date='$join_date',monthly_fee=$monthly_fee WHERE id=$id");
+            billing_start_date='$join_date',monthly_fee=$monthly_fee,pay_by_day=$pay_by_day WHERE id=$id");
         logAction($db,$_SESSION['user_id'],'EDIT_CUSTOMER',"Updated customer ID $id");
     } else {
         $db->exec("INSERT INTO customers (name,mobile,building,apartment,room,billing_day,
-            billing_start_date,monthly_fee,created_by,created_at)
+            billing_start_date,monthly_fee,pay_by_day,created_by,created_at)
             VALUES ('$name','$mobile','$building','$apartment','$room',
-            $billing_day,'$join_date',$monthly_fee,{$_SESSION['user_id']},datetime('now'))");
+            $billing_day,'$join_date',$monthly_fee,$pay_by_day,{$_SESSION['user_id']},datetime('now'))");
         logAction($db,$_SESSION['user_id'],'ADD_CUSTOMER',"Added $name");
     }
     header('Location: portal.php?page=customers'); exit;
@@ -1127,11 +1141,11 @@ tbody td{padding:10px 12px;vertical-align:middle}
         </div>
         <div>
           <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Start</label>
-          <input type="month" name="hold_start" class="form-control" required style="font-size:13px">
+          <input type="date" name="hold_start" class="form-control" required style="font-size:13px" placeholder="Departure date">
         </div>
         <div>
           <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">End</label>
-          <input type="month" name="hold_end" class="form-control" required style="font-size:13px">
+          <input type="date" name="hold_end" class="form-control" style="font-size:13px" placeholder="Return date (leave blank if unknown)">
         </div>
         <div>
           <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Reason</label>
@@ -1236,7 +1250,22 @@ tbody td{padding:10px 12px;vertical-align:middle}
         <input type="hidden" name="id" id="cust_id">
         <div class="input-group" style="margin-bottom:12px">
           <div style="flex:2"><label class="form-label">Full Name</label><input type="text" name="name" id="cust_name" class="form-control" placeholder="Customer full name" required></div>
-          <div style="flex:1"><label class="form-label">Mobile</label><input type="text" name="mobile" id="cust_mobile" class="form-control" placeholder="e.g. 555xxx" required></div>
+          <div style="flex:1">
+            <label class="form-label">Mobile (with country code)</label>
+            <div style="display:flex;gap:6px">
+              <select id="cust_country_code" class="form-control" style="flex:0 0 90px;font-size:13px">
+                <option value="966" selected>🇸🇦 +966</option>
+                <option value="880">🇧🇩 +880</option>
+                <option value="91">🇮🇳 +91</option>
+                <option value="92">🇵🇰 +92</option>
+                <option value="977">🇳🇵 +977</option>
+                <option value="63">🇵🇭 +63</option>
+                <option value="20">🇪🇬 +20</option>
+                <option value="">Other</option>
+              </select>
+              <input type="text" name="mobile" id="cust_mobile" class="form-control" placeholder="5xxxxxxxx (no leading 0)" required>
+            </div>
+          </div>
         </div>
         <div class="input-group" style="margin-bottom:12px">
           <div style="flex:1"><label class="form-label">Building</label><input type="text" name="building" id="cust_building" class="form-control" placeholder="Building name"></div>
@@ -1246,14 +1275,28 @@ tbody td{padding:10px 12px;vertical-align:middle}
         <div class="input-group" style="margin-bottom:12px">
           <div style="flex:1"><label class="form-label">Billing Day (1-31)</label><input type="number" name="billing_day" id="cust_billing_day" class="form-control" min="1" max="31" placeholder="e.g. 25" required></div>
           <div style="flex:1"><label class="form-label">Monthly Fee (SAR)</label><input type="number" name="monthly_fee" id="cust_fee" class="form-control" min="1" step="0.5" value="30" required></div>
+          <div style="flex:1"><label class="form-label">Pay By Day (1-31)</label><input type="number" name="pay_by_day" id="cust_pay_by_day" class="form-control" min="1" max="31" value="10" required></div>
         </div>
         <div style="margin-bottom:16px">
           <label class="form-label">Date Connection Started <small style="font-weight:400;text-transform:none">(actual date, e.g. 2025-04-25)</small></label>
           <input type="date" name="billing_start_date" id="cust_start" class="form-control" required>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> If joined after billing day, first bill automatically starts the following month.</div>
         </div>
-        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Customer</button>
+        <button type="submit" class="btn btn-success" onclick="return combineMobile()"><i class="fas fa-save"></i> Save Customer</button>
       </form>
+      <script>
+      function combineMobile() {
+        var cc = document.getElementById("cust_country_code").value;
+        var mob = document.getElementById("cust_mobile");
+        var num = mob.value.trim().replace(/^0+/, "").replace(/[^0-9]/g, "");
+        if (cc && num && !num.startsWith(cc)) {
+          mob.value = cc + num;
+        } else {
+          mob.value = num;
+        }
+        return true;
+      }
+      </script>
     </div>
   </div>
 </div>

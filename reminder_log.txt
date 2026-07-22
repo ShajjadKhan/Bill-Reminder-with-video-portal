@@ -310,3 +310,97 @@ SENT to Nelson Mendala (0545160916) - due day 5, days left: 2, total due: 80 SAR
 SENT to Kader (0561820118) - due day 5, days left: 2, total due: 60 SAR
 
 Done. Would send: 2 | Skipped (paid): 0
+SKIPPED (paid/credit): Pius
+
+Done. Would send: 0 | Skipped (paid): 1
+SENT to Abdul Sattar (0542792821 ) - due day 10, days left: 5, total due: 30 SAR
+SENT to Jasim (0578749261) - due day 10, days left: 5, total due: 30 SAR
+SENT to Rakib (0571731953) - due day 10, days left: 5, total due: 40 SAR
+
+Done. Would send: 3 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
+SENT to Abdul Sattar (0542792821 ) - due day 10, days left: 2, total due: 30 SAR
+SENT to Jasim (0578749261) - due day 10, days left: 2, total due: 30 SAR
+SENT to Rakib (0571731953) - due day 10, days left: 2, total due: 40 SAR
+
+Done. Would send: 3 | Skipped (paid): 0
+SENT to KHALID (0560426866) - due day 14, days left: 5, total due: 30 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+SENT to Rahel (0549067914) - due day 15, days left: 5, total due: 60 SAR
+SENT to Dilshad Ansari (0576386394) - due day 15, days left: 5, total due: 90 SAR
+SENT to Jisan (0508584766 ) - due day 15, days left: 5, total due: 61 SAR
+SENT to Akimul (0509193261) - due day 15, days left: 5, total due: 60 SAR
+SENT to Rubel (0578180940) - due day 15, days left: 5, total due: 30 SAR
+SENT to Sohel (0539980137) - due day 15, days left: 5, total due: 30 SAR
+SENT to Tarek (0561702326) - due day 15, days left: 5, total due: 60 SAR
+SENT to Yeasin Talukdar (0554691801) - due day 15, days left: 5, total due: 60 SAR
+SENT to Shuvo (0503425364) - due day 15, days left: 5, total due: 30 SAR
+SENT to HASIB BIN ABDUR RAHMAN (0561380133) - due day 15, days left: 5, total due: 120 SAR
+SENT to MOHAMMAD ARAFAT (0531165477) - due day 15, days left: 5, total due: 90 SAR
+SENT to Shourov Chandra Bala (0569527030) - due day 15, days left: 5, total due: 120 SAR
+SENT to ZABED (0508863431) - due day 15, days left: 5, total due: 60 SAR
+SENT to SAIFUL (0554288678) - due day 15, days left: 5, total due: 40 SAR
+SENT to RASHED (0575632418) - due day 15, days left: 5, total due: 90 SAR
+SENT to BADSHA (0543812659) - due day 15, days left: 5, total due: 60 SAR
+SENT to Ashfaq (0578801097) - due day 15, days left: 5, total due: 60 SAR
+SENT to Yeasin Ahmed (0548584280) - due day 15, days left: 5, total due: 90 SAR
+SENT to Deepak Sing (0543187795) - due day 15, days left: 5, total due: 60 SAR
+
+Done. Would send: 19 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
+SENT to KHALID (0560426866) - due day 14, days left: 2, total due: 30 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+SENT to Rahel (0549067914) - due day 15, days left: 2, total due: 60 SAR
+SENT to Dilshad Ansari (0576386394) - due day 15, days left: 2, total due: 90 SAR
+SENT to Jisan (0508584766 ) - due day 15, days left: 2, total due: 61 SAR
+SENT to Akimul (0509193261) - due day 15, days left: 2, total due: 60 SAR
+SENT to Rubel (0578180940) - due day 15, days left: 2, total due: 30 SAR
+SENT to Sohel (0539980137) - due day 15, days left: 2, total due: 30 SAR
+SENT to Tarek (0561702326) - due day 15, days left: 2, total due: 60 SAR
+SENT to Yeasin Talukdar (0554691801) - due day 15, days left: 2, total due: 40 SAR
+SENT to Shuvo (0503425364) - due day 15, days left: 2, total due: 30 SAR
+SENT to HASIB BIN ABDUR RAHMAN (0561380133) - due day 15, days left: 2, total due: 120 SAR
+SENT to MOHAMMAD ARAFAT (0531165477) - due day 15, days left: 2, total due: 90 SAR
+SENT to Shourov Chandra Bala (0569527030) - due day 15, days left: 2, total due: 120 SAR
+SENT to ZABED (0508863431) - due day 15, days left: 2, total due: 60 SAR
+SENT to SAIFUL (0554288678) - due day 15, days left: 2, total due: 40 SAR
+SENT to RASHED (0575632418) - due day 15, days left: 2, total due: 90 SAR
+SENT to BADSHA (0543812659) - due day 15, days left: 2, total due: 60 SAR
+SENT to Ashfaq (0578801097) - due day 15, days left: 2, total due: 60 SAR
+SENT to Yeasin Ahmed (0548584280) - due day 15, days left: 2, total due: 90 SAR
+SENT to Deepak Sing (0543187795) - due day 15, days left: 2, total due: 60 SAR
+
+Done. Would send: 19 | Skipped (paid): 0
+SENT to MEHEDI (0597328010) - due day 19, days left: 5, total due: 60 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+SENT to Mainuddin (0572803965) - due day 20, days left: 5, total due: 60 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
+SENT to MEHEDI (0597328010) - due day 19, days left: 2, total due: 60 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+SENT to Mainuddin (0572803965) - due day 20, days left: 2, total due: 60 SAR
+SENT to Narendra Rimal (0537513443 ) - due day 23, days left: 5, total due: 60 SAR
+
+Done. Would send: 2 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
+SENT to Babul Hossain  (0564183856) - due day 25, days left: 5, total due: 30 SAR
+
+Done. Would send: 1 | Skipped (paid): 0
+SENT to TAWHID (0572311646) - due day 26, days left: 5, total due: 60 SAR
+SENT to ABDUR RAHIM (0560402486) - due day 26, days left: 5, total due: 90 SAR
+SENT to Narendra Rimal (0537513443 ) - due day 23, days left: 2, total due: 60 SAR
+
+Done. Would send: 3 | Skipped (paid): 0
+
+Done. Would send: 0 | Skipped (paid): 0
