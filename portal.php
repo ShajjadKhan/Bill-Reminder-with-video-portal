@@ -841,6 +841,9 @@ tbody td{padding:10px 12px;vertical-align:middle}
   .modal-body-custom{padding:12px}
   .input-group{flex-wrap:wrap}
   .input-group > div{min-width:100% !important}
+  .mobile-input-row{flex-wrap:nowrap !important}
+  .mobile-input-row select{flex:0 0 85px !important;font-size:12px !important}
+  .mobile-input-row input{flex:1 !important;min-width:0 !important}
   table{font-size:11px}
   thead th{padding:7px 6px;font-size:10px;white-space:nowrap}
   tbody td{padding:7px 6px;white-space:nowrap}
@@ -990,6 +993,23 @@ tbody td{padding:10px 12px;vertical-align:middle}
   </div>
 </div>
 
+<div class="card">
+  <div class="card-header"><div class="card-header-title"><i class="fas fa-file-invoice-dollar"></i> Collection Report (Custom Date Range)</div></div>
+  <div class="card-body">
+    <form method="get" target="_blank" action="report_print.php" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-muted)">From Date</label>
+        <input type="date" name="from" class="form-control" required value="<?= date('Y-m-01') ?>">
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-muted)">To Date</label>
+        <input type="date" name="to" class="form-control" required value="<?= date('Y-m-d') ?>">
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-file-pdf"></i> Generate Report / PDF</button>
+    </form>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px"><i class="fas fa-info-circle"></i> Opens a printable report in a new tab. Use your browser's Print → Save as PDF to download.</div>
+  </div>
+</div>
 <?php elseif ($page === 'collections'): ?>
 <div class="card">
   <div class="card-header"><div class="card-header-title"><i class="fas fa-search"></i> Search Customer</div></div>
@@ -1252,7 +1272,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <div style="flex:2"><label class="form-label">Full Name</label><input type="text" name="name" id="cust_name" class="form-control" placeholder="Customer full name" required></div>
           <div style="flex:1">
             <label class="form-label">Mobile (with country code)</label>
-            <div style="display:flex;gap:6px">
+            <div class="mobile-input-row" style="display:flex;gap:6px">
               <select id="cust_country_code" class="form-control" style="flex:0 0 90px;font-size:13px">
                 <option value="966" selected>🇸🇦 +966</option>
                 <option value="880">🇧🇩 +880</option>
