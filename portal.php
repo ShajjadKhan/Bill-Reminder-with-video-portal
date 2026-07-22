@@ -1339,16 +1339,31 @@ tbody td{padding:10px 12px;vertical-align:middle}
         while ($h = $holds->fetchArray(SQLITE3_ASSOC)): 
           $found = true;
       ?>
-      <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px"><strong><?= htmlspecialchars($h['name']) ?></strong></td>
-        <td style="padding:8px"><?= $h['hold_start'] ?> → <?= $h['hold_end'] ?></td>
+      <tr style="border-bottom:1px solid var(--border);<?= !$h['hold_end'] ? 'background:rgba(245,158,11,.06)' : '' ?>">
+        <td style="padding:8px">
+          <strong><?= htmlspecialchars($h['name']) ?></strong>
+          <?php if (!$h['hold_end']): 
+            $days_away = (new DateTime())->diff(new DateTime($h['hold_start']))->days;
+          ?>
+          <br><span style="background:#f59e0b;color:#000;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">🏖️ ON VACATION — <?= $days_away ?> days</span>
+          <?php endif; ?>
+        </td>
+        <td style="padding:8px"><?= $h['hold_start'] ?> → <?= $h['hold_end'] ?: '<span style="color:#f59e0b">ongoing</span>' ?></td>
         <td style="padding:8px;color:var(--text-muted)"><?= htmlspecialchars($h['reason']) ?></td>
         <?php if(isMaster()): ?>
-        <td style="padding:8px;text-align:center">
+        <td style="padding:8px;text-align:center;white-space:nowrap">
+          <?php if (!$h['hold_end']): ?>
+          <form method="post" style="display:inline-flex;gap:4px;align-items:center;margin-bottom:4px">
+            <input type="hidden" name="action" value="resume_hold">
+            <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+            <input type="date" name="resume_date" value="<?= date('Y-m-d') ?>" class="form-control" style="font-size:11px;width:130px;padding:4px 6px">
+            <button type="submit" class="btn btn-primary btn-xs" title="Resume billing from this date"><i class="fas fa-play"></i> Resume</button>
+          </form>
+          <?php endif; ?>
           <form method="post" style="display:inline">
             <input type="hidden" name="action" value="delete_hold">
             <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
-            <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Remove?')"><i class="fas fa-trash"></i></button>
+            <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this hold record entirely?')"><i class="fas fa-trash"></i></button>
           </form>
         </td>
         <?php endif; ?>
