@@ -126,12 +126,15 @@ function getEffectiveBillingStart($billing_start_date, $billing_day) {
     $join_month = (int)$dt->format('n');
     if ($join_day <= $bd) {
         // Joined before or on billing day — first bill is this month on billing day
-        return new DateTime(sprintf('%04d-%02d-%02d', $join_year, $join_month, $bd));
+        $dim = (int)cal_days_in_month(CAL_GREGORIAN, $join_month, $join_year);
+        return new DateTime(sprintf('%04d-%02d-%02d', $join_year, $join_month, min($bd, $dim)));
     } else {
         // Joined after billing day — first bill is next month on billing day
         $next = new DateTime(sprintf('%04d-%02d-01', $join_year, $join_month));
         $next->modify('+1 month');
-        return new DateTime(sprintf('%04d-%02d-%02d', (int)$next->format('Y'), (int)$next->format('n'), $bd));
+        $ny = (int)$next->format('Y'); $nm = (int)$next->format('n');
+        $dim = (int)cal_days_in_month(CAL_GREGORIAN, $nm, $ny);
+        return new DateTime(sprintf('%04d-%02d-%02d', $ny, $nm, min($bd, $dim)));
     }
 }
 
@@ -150,12 +153,12 @@ function getUnpaidMonths($db, $customer_id, $current_month) {
         $next_year  = (int)$cur->format('Y');
         $next_month = (int)$cur->format('n') + 1;
         if ($next_month > 12) { $next_month = 1; $next_year++; }
-        try {
-            $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $bd));
-        } catch (Exception $e) {
-            $cur = new DateTime(sprintf('%04d-%02d-01', $next_year, $next_month));
-            $cur->modify('last day of this month');
-        }
+        // Clamp billing day to the actual number of days in the target month
+        // (PHP silently overflows invalid dates like 2026-02-31 instead of throwing,
+        // so we must check cal_days_in_month ourselves rather than rely on try/catch)
+        $days_in_target_month = (int)cal_days_in_month(CAL_GREGORIAN, $next_month, $next_year);
+        $safe_day = min($bd, $days_in_target_month);
+        $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $safe_day));
     }
     $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=$customer_id GROUP BY month_year");
     $paid = [];
@@ -558,14 +561,39 @@ if (isLoggedIn() && isMaster() && $action === 'reset_password') {
 if (isLoggedIn() && (isMaster() || isAdmin()) && isset($_POST['action']) && $_POST['action'] == 'allocate_advance') {
     $customer_id = intval($_POST['customer_id']);
     $total_advance = floatval($_POST['advance_amount']);
-    $customer = $db->querySingle("SELECT name, mobile FROM customers WHERE id=$customer_id", true);
+    $customer = $db->querySingle("SELECT name, mobile, monthly_fee, billing_start_date FROM customers WHERE id=$customer_id", true);
     if (!$customer || $total_advance <= 0) { $_SESSION['error'] = "Invalid"; header('Location: portal.php?page=collections'); exit; }
-    $last_col = $db->querySingle("SELECT MAX(month_year) as last_month FROM collections WHERE customer_id=$customer_id", true);
-    if (is_null($last_col['last_month'])) { $start_month = new DateTime($customer['billing_start_date']); } else { $start_month = new DateTime($last_col['last_month'] . '-01'); $start_month->modify('+1 month'); }
-    $months_to_cover = intval($total_advance / 30);
-    $remaining = $total_advance - ($months_to_cover * 30);
-    for ($i = 0; $i < $months_to_cover; $i++) { $month_year = $start_month->format('Y-m'); $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', 30, {$_SESSION['user_id']}, datetime('now'))"); $start_month->modify('+1 month'); }
-    if ($remaining > 0) { $month_year = $start_month->format('Y-m'); $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', $remaining, {$_SESSION['user_id']}, datetime('now'))"); }
+    $fee = max(1, floatval($customer['monthly_fee'] ?: 30));
+    $left = $total_advance;
+    $months_to_cover = 0;
+
+    // 1) Fill oldest unpaid months FIRST (gaps like Jan/Mar/May)
+    $unpaid = getUnpaidMonths($db, $customer_id, date('Y-m'));
+    foreach ($unpaid as $u) {
+        if ($left <= 0) break;
+        $pay = min($u['due'], $left);
+        $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '{$u['month']}', $pay, {$_SESSION['user_id']}, datetime('now'))");
+        $left -= $pay;
+        $months_to_cover++;
+    }
+
+    // 2) Then allocate remainder into future months after the latest recorded month
+    if ($left > 0) {
+        $last_col = $db->querySingle("SELECT MAX(month_year) as last_month FROM collections WHERE customer_id=$customer_id", true);
+        if (is_null($last_col['last_month'])) { $start_month = new DateTime($customer['billing_start_date']); } else { $start_month = new DateTime($last_col['last_month'] . '-01'); $start_month->modify('+1 month'); }
+        while ($left >= $fee) {
+            $month_year = $start_month->format('Y-m');
+            $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', $fee, {$_SESSION['user_id']}, datetime('now'))");
+            $left -= $fee; $months_to_cover++;
+            $start_month->modify('+1 month');
+        }
+        if ($left > 0) {
+            $month_year = $start_month->format('Y-m');
+            $db->exec("INSERT INTO collections (customer_id, month_year, amount, collected_by, collected_date) VALUES ($customer_id, '$month_year', $left, {$_SESSION['user_id']}, datetime('now'))");
+            $left = 0;
+        }
+    }
+    $remaining = 0;
     logAction($db, $_SESSION['user_id'], "ALLOCATE_ADVANCE", "$total_advance for {$customer['name']}");
     $_SESSION['msg'] = "Advance: $months_to_cover months + $remaining SAR";
     
