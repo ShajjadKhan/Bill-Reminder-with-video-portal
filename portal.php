@@ -106,10 +106,15 @@ function sendWhatsAppMessage($db, $mobile, $message) {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', "X-API-Key: $key"]);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['chatId' => $chatId, 'text' => $message]));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
     $result = curl_exec($ch);
+    $errno = curl_errno($ch);
     curl_close($ch);
-    return $result;
+    // OpenWA sometimes returns HTTP 500 with a generic error even when the message
+    // was actually delivered. Treat "no connection-level error" as success,
+    // since we have confirmed messages arrive despite this response quirk.
+    if ($errno !== 0) return false;
+    return $result ?: true;
 }
 
 function getEffectiveBillingStart($billing_start_date, $billing_day) {
@@ -318,6 +323,113 @@ function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_it
 // ============================================================
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
+// ============================================================
+// VACATION HOLD HANDLERS
+// ============================================================
+if (isLoggedIn() && isAdmin() && $action === 'add_hold') {
+    $cid = intval($_POST['customer_id'] ?? 0);
+    $start = trim($_POST['hold_start'] ?? '');
+    $end = trim($_POST['hold_end'] ?? '');
+    $reason = SQLite3::escapeString(trim($_POST['reason'] ?? 'Vacation'));
+    if ($cid && $start) {
+        $start_esc = SQLite3::escapeString($start);
+        $end_val = $end ? "'" . SQLite3::escapeString($end) . "'" : 'NULL';
+        $db->exec("INSERT INTO vacation_holds (customer_id, hold_start, hold_end, reason, created_by) VALUES ($cid, '$start_esc', $end_val, '$reason', {$_SESSION['user_id']})");
+        logAction($db, $_SESSION['user_id'], 'ADD_HOLD', "Added vacation hold for customer $cid starting $start");
+        $_SESSION['msg'] = "Vacation hold added";
+    } else {
+        $_SESSION['error'] = "Please select a customer and start date";
+    }
+    header('Location: portal.php?page=customers'); exit;
+}
+if (isLoggedIn() && isAdmin() && $action === 'resume_hold') {
+    $hid = intval($_POST['hold_id'] ?? 0);
+    $resume_date = trim($_POST['resume_date'] ?? date('Y-m-d'));
+    if (!$resume_date) $resume_date = date('Y-m-d');
+    $resume_esc = SQLite3::escapeString($resume_date);
+    if ($hid) {
+        $db->exec("UPDATE vacation_holds SET hold_end='$resume_esc' WHERE id=$hid AND hold_end IS NULL");
+        logAction($db, $_SESSION['user_id'], 'RESUME_HOLD', "Resumed vacation hold ID $hid on $resume_date");
+        $_SESSION['msg'] = "Customer resumed on $resume_date";
+    }
+    header('Location: portal.php?page=customers'); exit;
+}
+if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
+    $hid = intval($_POST['hold_id'] ?? 0);
+    if ($hid) {
+        $db->exec("DELETE FROM vacation_holds WHERE id=$hid");
+        logAction($db, $_SESSION['user_id'], 'DELETE_HOLD', "Deleted vacation hold ID $hid");
+        $_SESSION['msg'] = "Vacation hold removed";
+    }
+    header('Location: portal.php?page=customers'); exit;
+}
+
+if ($action === 'send_manual_reminder' && isLoggedIn()) {
+    header('Content-Type: application/json');
+    $cid = intval($_POST['customer_id'] ?? 0);
+    $cust = $db->querySingle("SELECT * FROM customers WHERE id=$cid", true);
+    if (!$cust) { echo json_encode(['ok'=>false,'error'=>'Customer not found']); exit; }
+
+    $fee = max(1, floatval($cust['monthly_fee'] ?: 30));
+    $pay_by_day = intval($cust['pay_by_day'] ?? 10) ?: 10;
+    $join_dt = new DateTime($cust['billing_start_date']);
+    $today = new DateTime(date('Y-m-d'));
+    $daily_rate = round($fee / 30, 4);
+    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id=$cid AND amount>0");
+    $days_covered = $daily_rate > 0 ? (int)floor($total_paid / $daily_rate) : 0;
+
+    $vholds = [];
+    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$cid");
+    while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
+        $vholds[] = ['s' => new DateTime($h['hold_start']), 'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : clone $today];
+    }
+
+    $active_until = null;
+    if ($days_covered > 0) {
+        $cnt = 0; $cur = clone $join_dt;
+        for ($i = 0; $i < 5000; $i++) {
+            $oh = false;
+            foreach ($vholds as $vh) { if ($cur >= $vh['s'] && $cur <= $vh['e']) { $oh = true; break; } }
+            if (!$oh) { $cnt++; if ($cnt >= $days_covered) { $active_until = clone $cur; break; } }
+            $cur->modify('+1 day');
+        }
+        if (!$active_until) $active_until = clone $cur;
+    } else {
+        $active_until = (clone $join_dt)->modify('-1 day');
+    }
+
+    $expired = $active_until < $today;
+    $days_diff = abs($today->diff($active_until)->days);
+    $movie_server = getSetting($db, 'movie_server');
+    $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
+    $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
+
+    $message = "📶 CYBERNET ACCOUNT STATUS\n";
+    $message .= "Assalamu Alaikum {$cust['name']}!\n\n";
+    $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
+    if ($expired) {
+        $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
+        $message .= "💰 Please recharge $fee SAR to continue service\n";
+    } else {
+        $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
+        $message .= "💰 Please recharge $fee SAR before it ends\n";
+    }
+    $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
+    $message .= "🎬 Movies: $movie_server\n";
+    $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
+    $message .= "📞 Support (24/7):\n$s1n: $s1p\n";
+    if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
+    $message .= "\nPlease recharge on time to avoid service interruption. 🙏";
+
+    $result = sendWhatsAppMessage($db, $cust['mobile'], $message);
+    if ($result) {
+        logAction($db, $_SESSION['user_id'], 'MANUAL_REMINDER', "Sent manual reminder to {$cust['name']}");
+        echo json_encode(['ok'=>true]);
+    } else {
+        echo json_encode(['ok'=>false,'error'=>'WhatsApp send failed - check OpenWA status']);
+    }
+    exit;
+}
 if ($action === 'wa_status' && isLoggedIn()) {
     header('Content-Type: application/json');
     $base = getSetting($db,'openwa_url');
@@ -721,7 +833,11 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-ser
 .stat-green{color:#10b981}.stat-icon-green{background:rgba(16,185,129,.12);color:#10b981}
 .stat-red{color:#ef4444}.stat-icon-red{background:rgba(239,68,68,.12);color:#ef4444}
 .stat-teal{color:#0ea5e9}.stat-icon-teal{background:rgba(14,165,233,.12);color:#0ea5e9}
-.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;position:relative}
+@media(max-width:768px){
+  .table-wrap::after{content:"";position:sticky;top:0;right:0;float:right;width:24px;height:100%;margin-left:-24px;background:linear-gradient(to right, transparent, rgba(0,0,0,.35));pointer-events:none;display:block}
+  .table-wrap table{position:relative}
+}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead tr{background:var(--surface2)}
 thead th{padding:10px 12px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:2px solid var(--border);white-space:nowrap}
@@ -748,6 +864,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .btn-xs{padding:2px 7px;font-size:11px;gap:3px;border-radius:6px}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;gap:4px}
 .badge-green{background:rgba(16,185,129,.15);color:var(--success)}
+.badge-purple{background:rgba(168,85,247,.15);color:#a855f7}
 .badge-red{background:rgba(239,68,68,.15);color:var(--danger)}
 .badge-blue{background:rgba(59,130,246,.15);color:#3b82f6}
 .badge-yellow{background:rgba(245,158,11,.15);color:var(--warning)}
@@ -1080,7 +1197,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <td style="white-space:nowrap">
             <button class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
             <button class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
-            <button class="btn btn-whatsapp btn-xs" onclick="sendReminder('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $total_due ?>,<?= htmlspecialchars($months_json,ENT_QUOTES) ?>)"><i class="fab fa-whatsapp"></i></button>
+            <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i></button>
           </td>
         </tr>
       <?php endforeach; endif; ?>
@@ -1236,7 +1353,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Monthly Fee</th><th>WhatsApp</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected Since</th><th>WhatsApp</th><th>Actions</th></tr></thead>
       <tbody id="custTbody">
       <?php $i=0;$custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
       while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?>
@@ -1246,8 +1363,16 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <td class="mono"><?= $c['mobile'] ?></td>
           <td style="color:var(--text-muted);font-size:12px"><?= trim($c['building'].' '.$c['apartment'].' R'.$c['room']) ?></td>
           <td><span class="badge badge-blue">Day <?= $c['billing_day'] ?></span></td>
+          <td><span class="badge badge-purple">Day <?= intval($c['pay_by_day'] ?: 10) ?></span></td>
           <td><span class="badge badge-green mono"><?= floatval($c['monthly_fee']?:30) ?> SAR</span></td>
-          <td><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>')"><i class="fab fa-whatsapp"></i></button></td>
+          <td>
+            <?php if (empty($c['billing_start_date'])): ?>
+              <span class="badge badge-red" title="Missing connection date - billing will be wrong!"><i class="fas fa-triangle-exclamation"></i> MISSING</span>
+            <?php else: ?>
+              <span class="mono" style="font-size:12px"><?= date('d M Y', strtotime($c['billing_start_date'])) ?></span>
+            <?php endif; ?>
+          </td>
+          <td><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i></button></td>
           <td style="white-space:nowrap">
             <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= $c['building'] ?>','<?= $c['apartment'] ?>','<?= $c['room'] ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>)"><i class="fas fa-edit"></i></button>
             <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
@@ -1714,7 +1839,7 @@ function editCust(id,name,mobile,building,apartment,room,day,start,fee){document
 const custSearch=document.getElementById('custSearch');
 if(custSearch){custSearch.addEventListener('input',function(){const q=this.value.toLowerCase();document.querySelectorAll('#custTbody tr').forEach(row=>{const n=(row.dataset.n||'').toLowerCase();const m=(row.dataset.m||'').toLowerCase();const b=(row.dataset.b||'').toLowerCase();const r=(row.dataset.r||'').toLowerCase();row.style.display=(n+m+b+r).includes(q)?'':'none';});});}
 const collSearch=document.getElementById('collSearch');
-if(collSearch){let debounce;collSearch.addEventListener('input',function(){clearTimeout(debounce);const q=this.value.trim();const res=document.getElementById('collResults');if(q.length<2){res.style.display='none';return;}debounce=setTimeout(()=>{fetch('search_customers.php?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{if(!data.length){res.innerHTML='<div style="padding:12px;text-align:center;color:var(--text-muted)">No results</div>';res.style.display='block';return;}res.innerHTML=data.map(c=>`<div class="search-result-item"><div><strong>${c.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${c.mobile} · ${c.building} R${c.room}</span></div><div style="display:flex;gap:6px"><button class="btn btn-primary btn-xs" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill'></i> Collect</button><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}')"><i class='fab fa-whatsapp'></i></button></div></div>`).join('');res.style.display='block';});},300);});document.addEventListener('click',e=>{if(!collSearch.contains(e.target))document.getElementById('collResults').style.display='none';});}
+if(collSearch){let debounce;collSearch.addEventListener('input',function(){clearTimeout(debounce);const q=this.value.trim();const res=document.getElementById('collResults');if(q.length<2){res.style.display='none';return;}debounce=setTimeout(()=>{fetch('search_customers.php?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{if(!data.length){res.innerHTML='<div style="padding:12px;text-align:center;color:var(--text-muted)">No results</div>';res.style.display='block';return;}res.innerHTML=data.map(c=>`<div class="search-result-item"><div><strong>${c.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${c.mobile} · ${c.building} R${c.room}</span></div><div style="display:flex;gap:6px"><button class="btn btn-primary btn-xs" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill'></i> Collect</button><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}',${c.id})"><i class='fab fa-whatsapp'></i></button></div></div>`).join('');res.style.display='block';});},300);});document.addEventListener('click',e=>{if(!collSearch.contains(e.target))document.getElementById('collResults').style.display='none';});}
 function openPromiseModal(cid,name,pid){
   document.getElementById('promise_cid').value=cid;
   document.getElementById('promise_pid').value=pid;
@@ -1730,8 +1855,14 @@ function updateTotal(){let total=0;document.querySelectorAll('.amt-input').forEa
 function showHistory(cid,name){document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('histModal');fetch('get_history.php?cid='+cid).then(r=>r.text()).then(html=>{document.getElementById('histContent').innerHTML=html;});}
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
 function sendWaMsg(mobile,message){const cfg=getWaConfig();let phone=mobile.replace(/^0+/,'');if(!/^966/.test(phone))phone='966'+phone;const chatId=phone+'@c.us';const url=`${cfg.url}/api/sessions/${cfg.sid}/messages/send-text`;return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':cfg.key},body:JSON.stringify({chatId,text:message})});}
-function sendReminder(mobile,name,totalDue,monthsList){let lines='';monthsList.forEach(m=>lines+=`  - ${m.month_name}: ${m.due} SAR\n`);const msg=`Dear ${name},\n\nYou have unpaid bills:\n${lines}\nTotal due: ${totalDue} SAR\nPlease pay soon.\n\n🎬 Movies: <?= getSetting($db,"movie_server") ?>\n\n📞 Support:\n<?= getSetting($db,"support_1_name") ?>: <?= getSetting($db,"support_1_phone") ?>\n<?= getSetting($db,"support_2_name") ?>: <?= getSetting($db,"support_2_phone") ?>`;sendWaMsg(mobile,msg).then(r=>r.ok?alert('✅ Reminder sent to '+name):alert('❌ Failed. Check OpenWA status.')).catch(()=>alert('❌ Network error'));}
-function sendReminderSimple(mobile,name){const msg=`Dear ${name},\n\nYour internet bill is due. Please pay on time.\n\n🎬 Movies: <?= getSetting($db,"movie_server") ?>\n\n📞 Support:\n<?= getSetting($db,"support_1_name") ?>: <?= getSetting($db,"support_1_phone") ?>`;sendWaMsg(mobile,msg).then(r=>r.ok?alert('✅ Reminder sent to '+name):alert('❌ Failed. Check OpenWA status.')).catch(()=>alert('❌ Network error'));}
+
+function sendReminderSimple(mobile,name,custId){
+  if(!custId){alert('Missing customer ID');return;}
+  const fd=new FormData();fd.append('action','send_manual_reminder');fd.append('customer_id',custId);
+  fetch('portal.php',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    if(d.ok)alert('✅ Reminder sent to '+name);else alert('❌ '+(d.error||'Failed to send'));
+  }).catch(()=>alert('❌ Network error'));
+}
 function checkWaStatus(){const el=document.getElementById('wa-status-display');if(!el)return;el.innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Checking…</div>';fetch('portal.php?action=wa_status').then(r=>r.json()).then(d=>{const s=d.session;const status=s?.status||'unknown';const dotClass=status==='CONNECTED'||status==='ready'?'connected':(status==='WAITING_QR'?'waiting':'disconnected');el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="wa-status-dot ${dotClass}"></span><strong style="font-size:16px">${status}</strong></div><div style="font-size:12px;color:var(--text-muted)">${s?.name?'<div>Session name: '+s.name+'</div>':''}${s?.phoneNumber?'<div>Phone: '+s.phoneNumber+'</div>':''}</div>`;}).catch(()=>{el.innerHTML='<div style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Could not reach OpenWA</div>';});}
 function fetchQR(){document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Fetching QR…</div>';fetch('portal.php?action=wa_qr').then(r=>r.json()).then(d=>{if(d.qrCode){document.getElementById('qr-container').innerHTML=`<div><img src="${d.qrCode}" style="max-width:240px;border-radius:8px"><p style="font-size:12px;color:var(--text-muted);margin-top:8px">Scan with WhatsApp</p></div>`;}else{document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)">No QR available. Session may already be connected, or try Reconnect first.</div>';}}).catch(()=>{document.getElementById('qr-container').innerHTML='<div style="color:var(--danger)">Error fetching QR</div>';});}
 function doReconnect(){if(!confirm('This will disconnect the current WhatsApp session and create a new one. Proceed?'))return;const logEl=document.getElementById('wa-log');logEl.innerHTML='<i class="fas fa-spinner fa-spin"></i> Reconnecting…';document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Please wait…</div>';fetch('portal.php?action=wa_reconnect',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){logEl.innerHTML=d.log.map(l=>`<div>✓ ${l}</div>`).join('');document.getElementById('session-id-display').textContent=d.new_session_id;setTimeout(fetchQR,2000);setTimeout(checkWaStatus,4000);}else{logEl.innerHTML='<span style="color:var(--danger)">Error: '+(d.error||'Unknown')+'</span>';}}).catch(()=>{logEl.innerHTML='<span style="color:var(--danger)">Network error</span>';});}
