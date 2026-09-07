@@ -109,7 +109,7 @@ if (isLoggedIn() && isAdmin() && $action === 'add_hold') {
     } else {
         $_SESSION['error'] = "Please select a customer and start date";
     }
-    header('Location: portal.php?page=customers'); exit;
+    header('Location: portal.php?page=vacations'); exit;
 }
 if (isLoggedIn() && isAdmin() && $action === 'resume_hold') {
     $hid = intval($_POST['hold_id'] ?? 0);
@@ -121,7 +121,7 @@ if (isLoggedIn() && isAdmin() && $action === 'resume_hold') {
         logAction($db, $_SESSION['user_id'], 'RESUME_HOLD', "Resumed vacation hold ID $hid on $resume_date");
         $_SESSION['msg'] = "Customer resumed on $resume_date";
     }
-    header('Location: portal.php?page=customers'); exit;
+    header('Location: portal.php?page=vacations'); exit;
 }
 if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
     $hid = intval($_POST['hold_id'] ?? 0);
@@ -130,7 +130,7 @@ if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
         logAction($db, $_SESSION['user_id'], 'DELETE_HOLD', "Deleted vacation hold ID $hid");
         $_SESSION['msg'] = "Vacation hold removed";
     }
-    header('Location: portal.php?page=customers'); exit;
+    header('Location: portal.php?page=vacations'); exit;
 }
 
 if ($action === 'send_manual_reminder' && isLoggedIn()) {
@@ -868,6 +868,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     <a href="?page=dashboard"   class="<?= $page=='dashboard'  ?'active':'' ?>"><i class="fas fa-chart-bar"></i> Dashboard</a>
     <a href="?page=collections" class="<?= $page=='collections'?'active':'' ?>"><i class="fas fa-hand-holding-usd"></i> Collections</a>
     <a href="?page=customers"   class="<?= $page=='customers'  ?'active':'' ?>"><i class="fas fa-users"></i> Customers</a>
+    <a href="?page=vacations"   class="<?= $page=='vacations'  ?'active':'' ?>"><i class="fas fa-umbrella-beach"></i> Vacations</a>
     <a href="?page=files"       class="<?= $page=='files'      ?'active':'' ?>"><i class="fas fa-film"></i> Movies</a>
     <a href="?page=report"      class="<?= $page=='report'     ?'active':'' ?>"><i class="fas fa-file-invoice"></i> Report</a>
     <a href="?page=balance"     class="<?= $page=='balance'    ?'active':'' ?>"><i class="fas fa-scale-balanced"></i> Balance Sheet</a>
@@ -1127,97 +1128,121 @@ tbody td{padding:10px 12px;vertical-align:middle}
   </div>
 </div>
 
-<?php elseif ($page === 'customers'): ?>
-<div class="card" style="margin-top:20px">
+<?php elseif ($page === 'vacations'): ?>
+<?php
+$active_vac_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds WHERE hold_end IS NULL OR hold_end >= date('now')");
+$total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
+?>
+<div class="card">
   <div class="card-header">
-    <div class="card-header-title"><i class="fas fa-umbrella"></i> Vacation Holds</div>
+    <div class="card-header-title"><i class="fas fa-umbrella-beach" style="color:#f59e0b"></i> Vacation Holds Management</div>
+    <div style="display:flex;gap:8px">
+      <span class="badge badge-yellow"><?= intval($active_vac_count) ?> currently away</span>
+      <span class="badge badge-gray"><?= intval($total_holds_count) ?> total records</span>
+    </div>
   </div>
   <div class="card-body">
-    <?php if (isMaster()): ?>
-    <div style="background:rgba(59,130,246,.05);padding:12px;border-radius:8px;margin-bottom:16px">
-      <h4 style="margin:0 0 12px 0;font-size:14px">➕ Add Vacation Hold</h4>
-      <form method="post" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;margin-top:10px">
+    <?php if (isMaster() || isAdmin()): ?>
+    <div style="background:rgba(59,130,246,.05);padding:14px;border-radius:10px;margin-bottom:20px;border:1px solid rgba(59,130,246,.15)">
+      <h4 style="margin:0 0 12px 0;font-size:14px;display:flex;align-items:center;gap:6px">
+        <i class="fas fa-plane-departure" style="color:var(--accent)"></i> Add Customer Vacation Hold
+      </h4>
+      <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)) auto;gap:12px;align-items:end">
         <div>
-          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Customer</label>
+          <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Customer</label>
           <div style="position:relative">
-            <input type="text" id="holdCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px">
+            <input type="text" id="holdCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px" required>
             <input type="hidden" name="customer_id" id="holdCustId" required>
             <div id="holdCustSug" style="position:absolute;top:100%;left:0;right:0;background:#1a1a2e;border:1px solid #2d2d44;border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)"></div>
           </div>
         </div>
         <div>
-          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Start</label>
-          <input type="date" name="hold_start" class="form-control" required style="font-size:13px" placeholder="Departure date">
+          <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Departure Date (Start)</label>
+          <input type="date" name="hold_start" class="form-control" required style="font-size:13px" value="<?= date('Y-m-d') ?>">
         </div>
         <div>
-          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">End</label>
-          <input type="date" name="hold_end" class="form-control" style="font-size:13px" placeholder="Return date (leave blank if unknown)">
+          <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Return Date (Leave blank if unknown)</label>
+          <input type="date" name="hold_end" class="form-control" style="font-size:13px" placeholder="Return date">
         </div>
         <div>
-          <label style="display:block;font-size:11px;margin-bottom:4px;color:var(--text-muted)">Reason</label>
-          <input type="text" name="hold_reason" class="form-control" style="font-size:13px" placeholder="Vacation...">
+          <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Reason / Notes</label>
+          <input type="text" name="reason" class="form-control" style="font-size:13px" placeholder="e.g. Vacation to Bangladesh">
         </div>
-        <div style="display:flex;align-items:flex-end">
+        <div>
           <input type="hidden" name="action" value="add_hold">
-          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add</button>
+          <button type="submit" class="btn btn-primary" style="height:38px"><i class="fas fa-plus"></i> Save Hold</button>
         </div>
       </form>
     </div>
     <?php endif; ?>
 
-    <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:12px">
-      <thead><tr style="background:var(--border)">
-        <th style="padding:8px;text-align:left">Customer</th>
-        <th style="padding:8px;text-align:left">Period</th>
-        <th style="padding:8px;text-align:left">Reason</th>
-        <?php if(isMaster()): ?><th style="padding:8px;width:80px">Action</th><?php endif; ?>
-      </tr></thead>
-      <tbody>
-      <?php 
-      $holds = $db->query("SELECT vh.*, c.name FROM vacation_holds vh JOIN customers c ON vh.customer_id=c.id ORDER BY vh.hold_start DESC");
-      if ($holds) {
-        $found = false;
-        while ($h = $holds->fetchArray(SQLITE3_ASSOC)): 
-          $found = true;
-      ?>
-      <tr style="border-bottom:1px solid var(--border);<?= !$h['hold_end'] ? 'background:rgba(245,158,11,.06)' : '' ?>">
-        <td style="padding:8px">
-          <strong><?= htmlspecialchars($h['name']) ?></strong>
-          <?php if (!$h['hold_end']): 
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th>
+          <th>Customer</th>
+          <th>Period</th>
+          <th>Status</th>
+          <th>Reason</th>
+          <?php if(isMaster() || isAdmin()): ?><th style="text-align:center">Actions</th><?php endif; ?>
+        </tr></thead>
+        <tbody>
+        <?php 
+        $holds = $db->query("SELECT vh.*, c.name, c.mobile, c.building, c.room FROM vacation_holds vh JOIN customers c ON vh.customer_id=c.id ORDER BY (vh.hold_end IS NULL OR vh.hold_end >= date('now')) DESC, vh.hold_start DESC");
+        $idx = 0;
+        if ($holds):
+          while ($h = $holds->fetchArray(SQLITE3_ASSOC)):
+            $idx++;
+            $is_away = (!$h['hold_end'] || $h['hold_end'] >= date('Y-m-d'));
             $days_away = (new DateTime())->diff(new DateTime($h['hold_start']))->days;
-          ?>
-          <br><span style="background:#f59e0b;color:#000;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">🏖️ ON VACATION — <?= $days_away ?> days</span>
+        ?>
+        <tr style="<?= $is_away ? 'background:rgba(245,158,11,.05)' : '' ?>">
+          <td class="mono" style="color:var(--text-muted)"><?= $idx ?></td>
+          <td>
+            <strong><?= htmlspecialchars($h['name']) ?></strong>
+            <br><small class="mono" style="color:var(--text-muted)"><?= $h['mobile'] ?> • <?= $h['building'].' R'.$h['room'] ?></small>
+          </td>
+          <td>
+            <strong><?= date('d M Y', strtotime($h['hold_start'])) ?></strong> → 
+            <?= $h['hold_end'] ? date('d M Y', strtotime($h['hold_end'])) : '<span class="badge badge-yellow">Ongoing</span>' ?>
+          </td>
+          <td>
+            <?php if ($is_away): ?>
+              <span class="badge badge-yellow">🏖️ Away (<?= $days_away ?> days)</span>
+            <?php else: ?>
+              <span class="badge badge-gray">Returned</span>
+            <?php endif; ?>
+          </td>
+          <td style="color:var(--text-muted);font-size:13px"><?= htmlspecialchars($h['reason'] ?: 'Vacation') ?></td>
+          <?php if(isMaster() || isAdmin()): ?>
+          <td style="text-align:center;white-space:nowrap">
+            <?php if (!$h['hold_end']): ?>
+            <form method="post" style="display:inline-flex;gap:4px;align-items:center">
+              <input type="hidden" name="action" value="resume_hold">
+              <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+              <input type="date" name="resume_date" value="<?= date('Y-m-d') ?>" class="form-control" style="font-size:11px;width:125px;padding:3px 6px">
+              <button type="submit" class="btn btn-primary btn-xs" title="Resume billing from this date"><i class="fas fa-play"></i> Resume</button>
+            </form>
+            <?php endif; ?>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_hold">
+              <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+              <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this vacation hold record entirely?')"><i class="fas fa-trash"></i></button>
+            </form>
+          </td>
           <?php endif; ?>
-        </td>
-        <td style="padding:8px"><?= $h['hold_start'] ?> → <?= $h['hold_end'] ?: '<span style="color:#f59e0b">ongoing</span>' ?></td>
-        <td style="padding:8px;color:var(--text-muted)"><?= htmlspecialchars($h['reason']) ?></td>
-        <?php if(isMaster()): ?>
-        <td style="padding:8px;text-align:center;white-space:nowrap">
-          <?php if (!$h['hold_end']): ?>
-          <form method="post" style="display:inline-flex;gap:4px;align-items:center;margin-bottom:4px">
-            <input type="hidden" name="action" value="resume_hold">
-            <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
-            <input type="date" name="resume_date" value="<?= date('Y-m-d') ?>" class="form-control" style="font-size:11px;width:130px;padding:4px 6px">
-            <button type="submit" class="btn btn-primary btn-xs" title="Resume billing from this date"><i class="fas fa-play"></i> Resume</button>
-          </form>
-          <?php endif; ?>
-          <form method="post" style="display:inline">
-            <input type="hidden" name="action" value="delete_hold">
-            <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
-            <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this hold record entirely?')"><i class="fas fa-trash"></i></button>
-          </form>
-        </td>
-        <?php endif; ?>
-      </tr>
-      <?php endwhile;
-        if (!$found) echo '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted)">No active holds</td></tr>';
-      }
-      ?>
-      </tbody>
-    </table>
+        </tr>
+        <?php endwhile;
+          if ($idx === 0): ?>
+          <tr><td colspan="6" style="padding:28px;text-align:center;color:var(--text-muted)"><i class="fas fa-umbrella-beach" style="font-size:24px;display:block;margin-bottom:8px;opacity:.4"></i> No vacation holds on record</td></tr>
+        <?php endif; endif; ?>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
+<?php elseif ($page === 'customers'): ?>
 <div class="card">
   <div class="card-header">
     <div class="card-header-title"><i class="fas fa-search"></i> Search</div>
