@@ -6,7 +6,10 @@ session_start();
 date_default_timezone_set('Asia/Riyadh');
 
 $db = new SQLite3('/home/tserver/billing_reminder/bills.db');
-$db->busyTimeout(5000);
+$db->busyTimeout(10000);
+$db->exec('PRAGMA journal_mode = WAL;');
+$db->exec('PRAGMA synchronous = NORMAL;');
+require_once __DIR__ . '/billing_logic.php';
 
 // ============================================================
 // TABLES
@@ -80,240 +83,9 @@ function logAction($db, $uid, $action, $details) {
     $d = SQLite3::escapeString($details);
     $db->exec("INSERT INTO audit_log (user_id,action,details,timestamp) VALUES ($uid,'$a','$d',datetime('now'))");
 }
-function getSetting($db, $key) {
-    return $db->querySingle("SELECT value FROM settings WHERE key='".SQLite3::escapeString($key)."'") ?: '';
-}
-function setSetting($db, $key, $value) {
-    $k = SQLite3::escapeString($key);
-    $v = SQLite3::escapeString($value);
-    $db->exec("INSERT OR REPLACE INTO settings (key,value) VALUES ('$k','$v')");
-}
-
-function sendWhatsAppMessage($db, $mobile, $message) {
-    // Hardcoded OpenWA values (bypass settings table)
-    $base = "http://localhost:2785";
-    $key  = "dev-admin-key";
-    $sid  = "8cc17322-a9d3-4b88-89ac-d4d95fb57ff4";
-    if (!$sid || !$base) return false;
-    $phone = preg_replace('/^0+/','', $mobile);
-    if (!preg_match('/^966/', $phone)) $phone = '966'.$phone;
-    $chatId = $phone.'@c.us';
-    $url = "$base/api/sessions/$sid/messages/send-text";
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', "X-API-Key: $key"]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['chatId' => $chatId, 'text' => $message]));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    $result = curl_exec($ch);
-    $errno = curl_errno($ch);
-    curl_close($ch);
-    // OpenWA sometimes returns HTTP 500 with a generic error even when the message
-    // was actually delivered. Treat "no connection-level error" as success,
-    // since we have confirmed messages arrive despite this response quirk.
-    if ($errno !== 0) return false;
-    return $result ?: true;
-}
-
-function getEffectiveBillingStart($billing_start_date, $billing_day) {
-    if (!$billing_start_date) return new DateTime(date('Y-m-01'));
-    $dt = new DateTime($billing_start_date);
-    $join_day = (int)$dt->format('j');
-    $bd = (int)$billing_day;
-    $join_year  = (int)$dt->format('Y');
-    $join_month = (int)$dt->format('n');
-    if ($join_day <= $bd) {
-        // Joined before or on billing day — first bill is this month on billing day
-        $dim = (int)cal_days_in_month(CAL_GREGORIAN, $join_month, $join_year);
-        return new DateTime(sprintf('%04d-%02d-%02d', $join_year, $join_month, min($bd, $dim)));
-    } else {
-        // Joined after billing day — first bill is next month on billing day
-        $next = new DateTime(sprintf('%04d-%02d-01', $join_year, $join_month));
-        $next->modify('+1 month');
-        $ny = (int)$next->format('Y'); $nm = (int)$next->format('n');
-        $dim = (int)cal_days_in_month(CAL_GREGORIAN, $nm, $ny);
-        return new DateTime(sprintf('%04d-%02d-%02d', $ny, $nm, min($bd, $dim)));
-    }
-}
-
-function getUnpaidMonths($db, $customer_id, $current_month) {
-    $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=$customer_id", true);
-    if (!$c) return [];
-    $fee = max(1, floatval($c['monthly_fee'] ?: 30));
-    $bd  = (int)($c['billing_day'] ?: 1);
-    $today = new DateTime();
-    $start = getEffectiveBillingStart($c['billing_start_date'], $bd);
-    $months = [];
-    $cur = clone $start;
-    $limit = 60; $i = 0;
-    while ($cur <= $today && $i++ < $limit) {
-        $months[] = $cur->format('Y-m');
-        $next_year  = (int)$cur->format('Y');
-        $next_month = (int)$cur->format('n') + 1;
-        if ($next_month > 12) { $next_month = 1; $next_year++; }
-        // Clamp billing day to the actual number of days in the target month
-        // (PHP silently overflows invalid dates like 2026-02-31 instead of throwing,
-        // so we must check cal_days_in_month ourselves rather than rely on try/catch)
-        $days_in_target_month = (int)cal_days_in_month(CAL_GREGORIAN, $next_month, $next_year);
-        $safe_day = min($bd, $days_in_target_month);
-        $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $safe_day));
-    }
-    $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=$customer_id GROUP BY month_year");
-    $paid = [];
-    while ($r = $res->fetchArray(SQLITE3_ASSOC)) $paid[$r['month_year']] = ['total'=>floatval($r['total']),'settled'=>intval($r['settled'])];
-    // Vacation holds: full dates, NULL end = still away
-    $vholds = [];
-    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
-    while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
-        $vholds[] = ['s' => new DateTime($h['hold_start']), 'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))];
-    }
-    $unpaid = [];
-    foreach ($months as $m) {
-        $mStart = new DateTime($m . '-01');
-        $mEnd = clone $mStart; $mEnd->modify('last day of this month');
-        $dim = (int)$mEnd->format('j');
-        $billable = 0; $d = clone $mStart;
-        while ($d <= $mEnd) {
-            $oh = false;
-            foreach ($vholds as $vh) { if ($d >= $vh['s'] && $d <= $vh['e']) { $oh = true; break; } }
-            if (!$oh) $billable++;
-            $d->modify('+1 day');
-        }
-        if ($billable == 0) continue; // whole month on vacation
-        $mfee = round($fee * $billable / $dim, 2);
-        $p = $paid[$m] ?? null;
-        if ($p && ($p['settled'] == 1 || $p['total'] == 0)) continue;
-        $paid_amt = $p ? $p['total'] : 0;
-        $due = round($mfee - $paid_amt, 2);
-        if ($due > 0) $unpaid[] = ['month'=>$m,'due'=>$due,'fee'=>$mfee];
-    }
-    return $unpaid;
-}
+// Core billing & receipt functions provided by billing_logic.php
 
 
-
-function getServerAds() {
-    return [
-        'movie' => [
-            'name' => '🎬 Movies & Shows',
-            'url' => 'http://10.12.14.16:8082',
-            'desc' => 'Free access to movies, series & entertainment'
-        ],
-        'football' => [
-            'name' => '⚽ Live Football',
-            'url' => 'http://10.12.14.16:8086',
-            'desc' => 'Watch live matches, replays & sports updates'
-        ]
-    ];
-}
-
-function formatServerAds() {
-    $servers = getServerAds();
-    $msg = "\n🎁 EXCLUSIVE BENEFITS FOR OUR CUSTOMERS:\n";
-    foreach ($servers as $s) {
-        $msg .= "\n{$s['name']}\n{$s['desc']}\nAccess: {$s['url']}\n";
-    }
-    return $msg;
-}
-
-function getCustomerBalance($db, $customer_id) {
-    $cu = $db->querySingle("SELECT billing_start_date, monthly_fee FROM customers WHERE id=$customer_id", true);
-    if (!$cu) return null;
-    
-    $daily_rate = round(floatval($cu['monthly_fee'] ?: 30) / 30, 4);
-    $start = new DateTime($cu['billing_start_date']);
-    $today = new DateTime(date('Y-m-d'));
-    
-    // Get vacation hold periods (full dates, hold_end NULL = still on vacation)
-    $holds_res = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
-    $holds = [];
-    while ($h = $holds_res->fetchArray(SQLITE3_ASSOC)) {
-        $holds[] = [
-            's' => new DateTime($h['hold_start']),
-            'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))
-        ];
-    }
-    
-    // Count billable days (start date to yesterday inclusive)
-    $billable_days = 0;
-    $cur = clone $start;
-    $yesterday = clone $today; $yesterday->modify('-1 day');
-    while ($cur <= $yesterday) {
-        $in_hold = false;
-        foreach ($holds as $h) {
-            if ($cur >= $h['s'] && $cur <= $h['e']) { $in_hold = true; break; }
-        }
-        if (!$in_hold) $billable_days++;
-        $cur->modify('+1 day');
-    }
-    
-    $total_owed = round($billable_days * $daily_rate, 2);
-    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$customer_id AND amount>0");
-    $balance = round($total_paid - $total_owed, 2);
-    
-    return [
-        'total_owed' => $total_owed,
-        'total_paid' => $total_paid,
-        'balance' => $balance,
-        'billable_days' => $billable_days,
-        'daily_rate' => $daily_rate,
-        'has_credit' => $balance >= 0,
-        'owes' => abs(min(0, $balance))
-    ];
-}
-
-function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_items, $total_paid) {
-    $current_month = date('Y-m');
-    $movie  = getSetting($db,'movie_server');
-    $s1n    = getSetting($db,'support_1_name');
-    $s1p    = getSetting($db,'support_1_phone');
-    $s2n    = getSetting($db,'support_2_name');
-    $s2p    = getSetting($db,'support_2_phone');
-
-    $msg  = "✅ PAYMENT RECEIPT\n\n";
-    $msg .= "Customer : $customer_name\n";
-    $msg .= "Date     : ".date("d M Y H:i")."\n";
-    $msg .= "Collected: $collector\n\n";
-    $msg .= "💳 Payment Details:\n";
-    foreach ($paid_items as $item) {
-        $label = $item['amount'] == 0 ? 'WAIVED' : 'PAID';
-        $msg .= "  $label ".date('M Y', strtotime($item['month'].'-01')).": {$item['amount']} SAR\n";
-    }
-    $msg .= "\nTotal paid today: $total_paid SAR\n\n";
-
-    $remaining = getUnpaidMonths($db, $customer_id, $current_month);
-    if (!empty($remaining)) {
-        $msg .= "⚠️ Remaining Balance:\n";
-        foreach ($remaining as $r) {
-            $msg .= "  ".date('M Y', strtotime($r['month'].'-01')).": {$r['due']} SAR\n";
-        }
-    } else {
-        $msg .= "✅ All bills are paid. Thank you!\n";
-    }
-    // Balance summary (credit / owing)
-    $bal = getCustomerBalance($db, $customer_id);
-    if ($bal) {
-        $msg .= "\n📊 Account Balance:\n";
-        if ($bal["balance"] > 0) {
-            $prepaid_months = intval($bal["balance"] / 30);
-            $msg .= "  Credit: +".number_format($bal["balance"],2)." SAR";
-            if ($prepaid_months > 0) $msg .= " ($prepaid_months month".($prepaid_months>1?"s":"")." prepaid)";
-            $msg .= "\n";
-        } elseif ($bal["balance"] == 0) {
-            $msg .= "  Fully settled ✅\n";
-        } else {
-            $msg .= "  Due: ".number_format(abs($bal["balance"]),2)." SAR\n";
-        }
-    }
-    $msg .= "\n🎁 Free for our customers:\n";
-    $msg .= "  🎬 Movies: $movie\n";
-    $msg .= "  ⚽ Live Football: http://10.12.14.16:8086\n\n";
-    $msg .= "📞 Support (24/7):\n";
-    $msg .= "  $s1n: $s1p\n";
-    if ($s2n && $s2p) $msg .= "  $s2n: $s2p\n";    $msg .= "\n";
-    $msg .= "Thank you for your payment! 🙏";
-    return $msg;
-}
 
 // ============================================================
 // AJAX / API HANDLERS
@@ -613,26 +385,32 @@ if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
     $customer_id = intval($_POST['customer_id']);
     $months      = $_POST['months']  ?? [];
     $amounts     = $_POST['amounts'] ?? [];
-    $customer    = $db->querySingle("SELECT name,mobile FROM customers WHERE id=$customer_id",true);
+    $customer    = $db->querySingle("SELECT name,mobile,monthly_fee FROM customers WHERE id=$customer_id",true);
 
     $paid_items  = [];
     $total_paid  = 0;
+    $cust_fee    = max(1, floatval(($customer['monthly_fee'] ?? 30) ?: 30));
 
     foreach ($months as $i => $month) {
-        $amt = floatval($amounts[$i]);
+        $amt = floatval($amounts[$i] ?? 0);
         $month = SQLite3::escapeString($month);
-        $is_settled = 1;
         if ($amt >= 0) {
+            $prev_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id=$customer_id AND month_year='$month'");
+            $total_month_paid = $prev_paid + $amt;
+            // Mark settled only if total payments for this month reach the fee OR amount entered is 0 (explicit waiver)
+            $is_settled = ($total_month_paid >= $cust_fee || $amt == 0) ? 1 : 0;
+
             $db->exec("INSERT INTO collections (customer_id,month_year,amount,collected_by,collected_date,is_settled)
                 VALUES ($customer_id,'$month',$amt,{$_SESSION['user_id']},datetime('now'),$is_settled)");
             $action_label = $is_settled ? 'SETTLE' : 'COLLECTION';
-            logAction($db,$_SESSION['user_id'],$action_label,"{$customer['name']} — $month: $amt SAR".($is_settled?' (settled)':''));
+            logAction($db,$_SESSION['user_id'],$action_label,"{$customer['name']} — $month: $amt SAR".($is_settled?' (settled)':' (partial)'));
             $paid_items[] = ['month'=>$month,'amount'=>$amt,'settled'=>$is_settled];
             $total_paid  += $amt;
         }
     }
 
     $sent = false;
+    $msg = '';
     if (!empty($paid_items)) {
         $msg  = buildReceiptMsg($db,$customer_id,$customer['name'],$_SESSION['fullname'],$paid_items,$total_paid);
         $sent = sendWhatsAppMessage($db,$customer['mobile'],$msg);
@@ -643,8 +421,10 @@ if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
         'amount'   => $total_paid,
         'datetime' => date('Y-m-d H:i:s'),
         'collector'=> $_SESSION['fullname'],
+        'mobile'   => $customer['mobile'],
+        'receipt'  => $msg,
     ];
-    $_SESSION['msg'] = "Payment recorded. WhatsApp receipt ".($sent?'sent.':'could not be sent (check OpenWA).');
+    $_SESSION['msg'] = "Payment of {$total_paid} SAR recorded. WhatsApp receipt " . ($sent ? 'sent successfully.' : 'could not be sent automatically.');
     header('Location: portal.php?page=collections'); exit;
 }
 
@@ -763,38 +543,51 @@ if (isset($_GET['download'])) {
 }
 
 // ============================================================
-// DATA LOADING
+// DATA LOADING (Optimized & Lazy Loaded by Page)
 // ============================================================
 $current_month  = date('Y-m');
 $display_month  = $_GET['stats_month'] ?? $current_month;
+$total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status='active'");
 
 $pending_customers = [];
-$all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee FROM customers WHERE status='active'");
-while ($c = $all_c->fetchArray(SQLITE3_ASSOC)) {
-    $unpaid = getUnpaidMonths($db,$c['id'],$current_month);
-    if (!empty($unpaid)) {
-        $c['unpaid']       = $unpaid;
-        $c['oldest_unpaid']= $unpaid[0]['month'];
-        $pending_customers[] = $c;
+if ($page === 'collections' || $page === 'dashboard') {
+    $all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee FROM customers WHERE status='active' ORDER BY name");
+    while ($c = $all_c->fetchArray(SQLITE3_ASSOC)) {
+        $unpaid = getUnpaidMonths($db,$c['id'],$current_month);
+        if (!empty($unpaid)) {
+            $c['unpaid']        = $unpaid;
+            $c['oldest_unpaid'] = $unpaid[0]['month'];
+            $pending_customers[] = $c;
+        }
     }
+    usort($pending_customers, fn($a,$b) => strcmp($a['oldest_unpaid'],$b['oldest_unpaid']));
+    // Load promises for pending customers
+    $today_str = date('Y-m-d');
+    foreach ($pending_customers as &$pc) {
+        $cid = $pc['id'];
+        $promise = $db->querySingle("SELECT * FROM promises WHERE customer_id=$cid AND status='pending' AND promise_date >= '$today_str' ORDER BY promise_date ASC LIMIT 1", true);
+        $pc['promise'] = $promise ?: null;
+    }
+    unset($pc);
 }
-usort($pending_customers, fn($a,$b) => strcmp($a['oldest_unpaid'],$b['oldest_unpaid']));
-// Load promises for pending customers
-$today_str = date('Y-m-d');
-foreach ($pending_customers as &$pc) {
-    $cid = $pc['id'];
-    $promise = $db->querySingle("SELECT * FROM promises WHERE customer_id=$cid AND status='pending' AND promise_date >= '$today_str' ORDER BY promise_date ASC LIMIT 1", true);
-    $pc['promise'] = $promise ?: null;
-}
-unset($pc);
 
-$total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status='active'");
-$collected_count = $db->querySingle("SELECT COUNT(DISTINCT customer_id) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND amount>0");
-$total_amount    = $db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month'");
-$pending_count   = $total_customers - $collected_count;
-$all_collections = $db->query("SELECT c.id,c.customer_id,cu.name AS cname,c.month_year,c.amount,c.collected_date,u.fullname AS collector
-    FROM collections c JOIN customers cu ON c.customer_id=cu.id JOIN users u ON c.collected_by=u.id
-    ORDER BY c.collected_date DESC");
+if ($page === 'dashboard') {
+    $collected_count = $db->querySingle("SELECT COUNT(DISTINCT customer_id) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND amount>0");
+    $total_amount    = $db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month'");
+    $pending_count   = count($pending_customers);
+} else {
+    $collected_count = 0;
+    $total_amount    = 0;
+    $pending_count   = 0;
+}
+
+if ($page === 'report') {
+    $all_collections = $db->query("SELECT c.id,c.customer_id,cu.name AS cname,c.month_year,c.amount,c.collected_date,u.fullname AS collector
+        FROM collections c JOIN customers cu ON c.customer_id=cu.id JOIN users u ON c.collected_by=u.id
+        ORDER BY c.collected_date DESC LIMIT 500");
+} else {
+    $all_collections = false;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1004,6 +797,38 @@ tbody td{padding:10px 12px;vertical-align:middle}
 [data-theme="dark"] .modal-header-custom{border-color:var(--border)}
 [data-theme="dark"] .modal-close{background:var(--surface2);color:var(--text-muted)}
 [data-theme="dark"] .login-wrap{background:var(--nav-bg)}
+
+/* Responsive Mobile Card View & Toast Styles */
+@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.toast-msg { animation: slideInRight 0.25s ease-out; }
+.filter-pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted); transition: all .15s; }
+.filter-pill:hover, .filter-pill.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+@media(max-width: 768px) {
+  .responsive-coll-table table, 
+  .responsive-coll-table thead, 
+  .responsive-coll-table tbody, 
+  .responsive-coll-table th, 
+  .responsive-coll-table td, 
+  .responsive-coll-table tr { display: block; }
+  .responsive-coll-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-coll-table tbody tr {
+    margin-bottom: 14px;
+    background: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  }
+  .responsive-coll-table tbody td {
+    border: none;
+    padding: 4px 0;
+    white-space: normal;
+  }
+  .responsive-coll-table tbody td:first-child { display: none; }
+  .mobile-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .mobile-card-actions .btn { flex: 1; padding: 8px 4px; font-size: 12px; font-weight: 600; }
+}
 </style>
 </head>
 <body>
@@ -1070,11 +895,23 @@ tbody td{padding:10px 12px;vertical-align:middle}
   <button class="alert-close" onclick="this.parentElement.remove()">×</button>
 </div>
 <?php unset($_SESSION['msg']); endif; ?>
+<div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
 <?php if (isset($_SESSION['last_collection'])): $lc=$_SESSION['last_collection']; ?>
-<div class="alert alert-success">
-  <i class="fas fa-check-circle"></i>
-  <span><strong><?= htmlspecialchars($lc['name']) ?></strong> — <?= $lc['amount'] ?> SAR collected by <?= htmlspecialchars($lc['collector']) ?> on <?= $lc['datetime'] ?></span>
-  <button class="alert-close" onclick="this.parentElement.remove()">×</button>
+<div class="alert alert-success" style="display:flex;flex-direction:column;gap:8px">
+  <div style="display:flex;align-items:center;gap:8px">
+    <i class="fas fa-check-circle" style="font-size:18px"></i>
+    <span><strong><?= htmlspecialchars($lc['name']) ?></strong> — <?= $lc['amount'] ?> SAR collected by <?= htmlspecialchars($lc['collector']) ?> on <?= $lc['datetime'] ?></span>
+    <button class="alert-close" onclick="this.parentElement.parentElement.remove()" style="margin-left:auto">×</button>
+  </div>
+  <?php if (!empty($lc['receipt'])): 
+    $safe_phone = preg_replace('/[^0-9]/','', $lc['mobile'] ?? '');
+    if (!preg_match('/^966/', $safe_phone)) $safe_phone = '966' . ltrim($safe_phone, '0');
+  ?>
+  <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+    <button type="button" class="btn btn-xs btn-secondary" onclick="copyToClipboard(<?= json_encode($lc['receipt']) ?>)"><i class="fas fa-copy"></i> Copy Receipt Text</button>
+    <a href="https://wa.me/<?= $safe_phone ?>?text=<?= urlencode($lc['receipt']) ?>" target="_blank" class="btn btn-xs btn-whatsapp"><i class="fab fa-whatsapp"></i> Open in WhatsApp Web</a>
+  </div>
+  <?php endif; ?>
 </div>
 <?php unset($_SESSION['last_collection']); endif; ?>
 
@@ -1191,10 +1028,20 @@ tbody td{padding:10px 12px;vertical-align:middle}
 <div class="card">
   <div class="card-header">
     <div class="card-header-title"><i class="fas fa-clock"></i> Pending Bills (oldest first)</div>
-    <span class="badge badge-red"><?= count($pending_customers) ?> customers</span>
+    <span class="badge badge-red" id="pendingBadgeCount"><?= count($pending_customers) ?> customers</span>
   </div>
-  <div class="table-wrap">
-    <table>
+  <div style="padding: 12px 14px 4px 14px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <input type="text" id="pendingFilterInput" class="form-control" placeholder="🔍 Search pending (name, mobile, building, room)..." style="flex:1;min-width:200px;font-size:13px" oninput="filterPendingTable()">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="filter-pill active" onclick="setPendingFilter('all', this)">All</button>
+        <button type="button" class="filter-pill" onclick="setPendingFilter('promise', this)">🤝 Promised</button>
+        <button type="button" class="filter-pill" onclick="setPendingFilter('multi', this)">⚠️ 2+ Months</button>
+      </div>
+    </div>
+  </div>
+  <div class="table-wrap responsive-coll-table">
+    <table id="pendingTable">
       <thead><tr><th>#</th><th>Customer</th><th>Mobile</th><th>Billing Day</th><th>Address</th><th>Unpaid Months</th><th>Total Due</th><th>Actions</th></tr></thead>
       <tbody>
       <?php if (empty($pending_customers)): ?>
@@ -1203,7 +1050,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
         $total_due=array_sum(array_column($p['unpaid'],'due'));
         $months_json=json_encode(array_map(fn($u)=>['month'=>$u['month'],'month_name'=>date('F Y',strtotime($u['month'].'-01')),'due'=>$u['due']],$p['unpaid']));
       ?>
-        <tr style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>">
+        <tr style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>" data-has-promise="<?= $p['promise'] ? '1' : '0' ?>" data-unpaid-count="<?= count($p['unpaid']) ?>" data-building="<?= htmlspecialchars($p['building'] ?? '') ?>" data-room="<?= htmlspecialchars($p['room'] ?? '') ?>">
           <td class="mono" style="color:var(--text-muted)"><?= $i ?></td>
           <td>
             <strong><?= htmlspecialchars($p['name']) ?></strong>
@@ -1893,12 +1740,73 @@ function showHistory(cid,name){document.getElementById('histContent').innerHTML=
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
 function sendWaMsg(mobile,message){const cfg=getWaConfig();let phone=mobile.replace(/^0+/,'');if(!/^966/.test(phone))phone='966'+phone;const chatId=phone+'@c.us';const url=`${cfg.url}/api/sessions/${cfg.sid}/messages/send-text`;return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':cfg.key},body:JSON.stringify({chatId,text:message})});}
 
-function sendReminderSimple(mobile,name,custId){
-  if(!custId){alert('Missing customer ID');return;}
+function showToast(msg, type = 'success') {
+  const c = document.getElementById('toastContainer');
+  if (!c) { alert(msg); return; }
+  const t = document.createElement('div');
+  t.className = 'toast-msg';
+  t.style.cssText = `pointer-events:auto;min-width:260px;max-width:380px;background:${type==='success'?'#10b981':'#ef4444'};color:#fff;padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 6px 16px rgba(0,0,0,0.25);display:flex;align-items:center;gap:10px;`;
+  t.innerHTML = `<span>${msg}</span><button style="margin-left:auto;background:none;border:none;color:#fff;font-size:16px;cursor:pointer" onclick="this.parentElement.remove()">×</button>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .4s'; setTimeout(() => t.remove(), 400); }, 3500);
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('📋 Receipt text copied to clipboard!'));
+  } else {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    showToast('📋 Receipt text copied!');
+  }
+}
+
+let activePendingFilter = 'all';
+function setPendingFilter(type, btn) {
+  activePendingFilter = type;
+  document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
+  btn.classList.add('active');
+  filterPendingTable();
+}
+
+function filterPendingTable() {
+  const q = (document.getElementById('pendingFilterInput')?.value || '').toLowerCase().trim();
+  const rows = document.querySelectorAll('#pendingTable tbody tr');
+  let visibleCount = 0;
+  rows.forEach(r => {
+    const text = r.textContent.toLowerCase();
+    const hasPromise = r.getAttribute('data-has-promise') === '1';
+    const unpaidCount = parseInt(r.getAttribute('data-unpaid-count') || '1');
+    
+    let passFilter = true;
+    if (activePendingFilter === 'promise') passFilter = hasPromise;
+    else if (activePendingFilter === 'multi') passFilter = (unpaidCount > 1);
+
+    const passQuery = !q || text.includes(q);
+    if (passFilter && passQuery) {
+      r.style.display = '';
+      visibleCount++;
+    } else {
+      r.style.display = 'none';
+    }
+  });
+  const badge = document.getElementById('pendingBadgeCount');
+  if (badge) badge.textContent = visibleCount + ' shown';
+}
+
+function sendReminderSimple(mobile,name,custId,btnEl){
+  if(!custId){showToast('Missing customer ID', 'error');return;}
+  const btn = btnEl || event?.target?.closest('button');
+  const origHtml = btn ? btn.innerHTML : null;
+  if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
   const fd=new FormData();fd.append('action','send_manual_reminder');fd.append('customer_id',custId);
   fetch('portal.php',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
-    if(d.ok)alert('✅ Reminder sent to '+name);else alert('❌ '+(d.error||'Failed to send'));
-  }).catch(()=>alert('❌ Network error'));
+    if(btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+    if(d.ok) showToast('✅ Reminder sent to '+name, 'success');
+    else showToast('❌ '+(d.error||'Failed to send'), 'error');
+  }).catch(()=>{
+    if(btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+    showToast('❌ Network error - check connection', 'error');
+  });
 }
 function checkWaStatus(){const el=document.getElementById('wa-status-display');if(!el)return;el.innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Checking…</div>';fetch('portal.php?action=wa_status').then(r=>r.json()).then(d=>{const s=d.session;const status=s?.status||'unknown';const dotClass=status==='CONNECTED'||status==='ready'?'connected':(status==='WAITING_QR'?'waiting':'disconnected');el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="wa-status-dot ${dotClass}"></span><strong style="font-size:16px">${status}</strong></div><div style="font-size:12px;color:var(--text-muted)">${s?.name?'<div>Session name: '+s.name+'</div>':''}${s?.phoneNumber?'<div>Phone: '+s.phoneNumber+'</div>':''}</div>`;}).catch(()=>{el.innerHTML='<div style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Could not reach OpenWA</div>';});}
 function fetchQR(){document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Fetching QR…</div>';fetch('portal.php?action=wa_qr').then(r=>r.json()).then(d=>{if(d.qrCode){document.getElementById('qr-container').innerHTML=`<div><img src="${d.qrCode}" style="max-width:240px;border-radius:8px"><p style="font-size:12px;color:var(--text-muted);margin-top:8px">Scan with WhatsApp</p></div>`;}else{document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)">No QR available. Session may already be connected, or try Reconnect first.</div>';}}).catch(()=>{document.getElementById('qr-container').innerHTML='<div style="color:var(--danger)">Error fetching QR</div>';});}
