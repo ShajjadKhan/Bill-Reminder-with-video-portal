@@ -9,7 +9,6 @@ function getSetting($db, $key) {
 $movie_server = getSetting($db, 'movie_server');
 $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
 $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
-$s3n = getSetting($db, 'support_3_name'); $s3p = getSetting($db, 'support_3_phone');
 
 $today = new DateTime();
 $target_5 = (clone $today)->modify('+5 days');
@@ -17,7 +16,8 @@ $target_2 = (clone $today)->modify('+2 days');
 $target_days = array_unique([$target_5->format('j'), $target_2->format('j')]);
 $current_month = $today->format('Y-m');
 
-$openwa_url = "http://localhost:2785/api/sessions/5ecb7afd-213d-4c73-9ea0-e922d02e5ecf/messages/send-text";
+$wa_sid = getSetting($db, 'openwa_session_id') ?: '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4';
+$openwa_url = "http://localhost:2785/api/sessions/{$wa_sid}/messages/send-text";
 $api_key = "dev-admin-key";
 
 $customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date, monthly_fee, pay_by_day FROM customers WHERE status='active'");
@@ -123,8 +123,7 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $movie_server = getSetting($db, 'movie_server');
     $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
     $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
-    $s3n = getSetting($db, 'support_3_name'); $s3p = getSetting($db, 'support_3_phone');
-
+    
     $message = "📶 CYBERNET ACCOUNT STATUS\n";
     $message .= "Assalamu Alaikum {$c['name']}!\n\n";
     $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
@@ -141,8 +140,7 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $message .= "📞 Support (24/7):\n";
     $message .= "$s1n: $s1p\n";
     if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
-    if ($s3n && $s3p) $message .= "$s3n: $s3p\n";
-    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
+        $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
 
     $phone = ltrim(trim($c['mobile']), '0');
     if (!preg_match('/^966/', $phone)) $phone = '966' . $phone;
@@ -159,7 +157,8 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     curl_close($ch);
     
 
-    echo "SENT to {$c['name']} ({$c['mobile']}) - due day {$c['due_day']}, days left: $days_left, total due: $total_due SAR\n";
+    $status_str = $expired ? "-{$days_diff}d (expired)" : "+{$days_diff}d left";
+    echo "SENT to {$c['name']} ({$c['mobile']}) - due day {$c['due_day']}, status: $status_str, total due: $total_due SAR\n";
     $sent++;
 }
 

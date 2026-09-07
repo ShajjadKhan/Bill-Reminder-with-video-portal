@@ -55,14 +55,12 @@ if (!in_array('is_settled', $existing2)) $db->exec("ALTER TABLE collections ADD 
 $defaults = [
     'openwa_url'       => 'http://10.12.14.16:2785',
     'openwa_api_key'   => 'dev-admin-key',
-    'openwa_session_id'=> '5ecb7afd-213d-4c73-9ea0-e922d02e5ecf',
+    'openwa_session_id'=> '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4',
     'movie_server'     => 'http://10.12.14.16:8082',
     'support_1_name'   => 'Cyber Net',
     'support_1_phone'  => '+966594266584',
     'support_2_name'   => 'Riyad Hossain',
     'support_2_phone'  => '+966546377863',
-    'support_3_name'   => 'Jahir Hossain',
-    'support_3_phone'  => '+966542349510',
 ];
 foreach ($defaults as $k => $v) {
     $ek = SQLite3::escapeString($k);
@@ -95,7 +93,7 @@ function sendWhatsAppMessage($db, $mobile, $message) {
     // Hardcoded OpenWA values (bypass settings table)
     $base = "http://localhost:2785";
     $key  = "dev-admin-key";
-    $sid  = "5ecb7afd-213d-4c73-9ea0-e922d02e5ecf";
+    $sid  = "8cc17322-a9d3-4b88-89ac-d4d95fb57ff4";
     if (!$sid || !$base) return false;
     $phone = preg_replace('/^0+/','', $mobile);
     if (!preg_match('/^966/', $phone)) $phone = '966'.$phone;
@@ -271,8 +269,6 @@ function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_it
     $s1p    = getSetting($db,'support_1_phone');
     $s2n    = getSetting($db,'support_2_name');
     $s2p    = getSetting($db,'support_2_phone');
-    $s3n    = getSetting($db,'support_3_name');
-    $s3p    = getSetting($db,'support_3_phone');
 
     $msg  = "✅ PAYMENT RECEIPT\n\n";
     $msg .= "Customer : $customer_name\n";
@@ -314,9 +310,7 @@ function buildReceiptMsg($db, $customer_id, $customer_name, $collector, $paid_it
     $msg .= "  ⚽ Live Football: http://10.12.14.16:8086\n\n";
     $msg .= "📞 Support (24/7):\n";
     $msg .= "  $s1n: $s1p\n";
-    if ($s2n && $s2p) $msg .= "  $s2n: $s2p\n";
-    if ($s3n && $s3p) $msg .= "  $s3n: $s3p\n";
-    $msg .= "\n";
+    if ($s2n && $s2p) $msg .= "  $s2n: $s2p\n";    $msg .= "\n";
     $msg .= "Thank you for your payment! 🙏";
     return $msg;
 }
