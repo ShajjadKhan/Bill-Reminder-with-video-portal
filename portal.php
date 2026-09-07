@@ -510,6 +510,87 @@ if (isLoggedIn() && isMaster() && isset($_GET['delete_collection'])) {
 // ============================================================
 // FILE MANAGEMENT
 // ============================================================
+if (isLoggedIn() && $action === 'upload_chunk') {
+    header('Content-Type: application/json');
+    if (!isset($_FILES['file'])) {
+        echo json_encode(['success' => false, 'error' => 'No file chunk received']);
+        exit;
+    }
+
+    $chunk = intval($_POST['chunk'] ?? 0);
+    $total_chunks = intval($_POST['total_chunks'] ?? 1);
+    $session_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $_POST['session_id'] ?? '');
+    $original_name = trim($_POST['original_name'] ?? $_FILES['file']['name'] ?? 'movie.mp4');
+    $title = trim($_POST['title'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+
+    if (!$session_id) {
+        $session_id = 'up_' . time() . '_' . rand(1000, 9999);
+    }
+
+    $temp_dir = '/mnt/bigstorage/tmp_chunks/' . $session_id;
+    if (!is_dir($temp_dir)) {
+        @mkdir($temp_dir, 0777, true);
+        @chmod($temp_dir, 0777);
+    }
+
+    $chunk_file = $temp_dir . '/chunk_' . $chunk;
+    if (!move_uploaded_file($_FILES['file']['tmp_name'], $chunk_file)) {
+        echo json_encode(['success' => false, 'error' => 'Failed to save chunk ' . $chunk]);
+        exit;
+    }
+
+    // If last chunk, reassemble final file
+    if ($chunk + 1 >= $total_chunks) {
+        $clean_orig = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($original_name));
+        $final_filename = time() . '_' . $clean_orig;
+        $final_path = '/mnt/bigstorage/files/' . $final_filename;
+
+        $out = fopen($final_path, 'wb');
+        if (!$out) {
+            echo json_encode(['success' => false, 'error' => 'Cannot create final destination file on storage']);
+            exit;
+        }
+
+        for ($i = 0; $i < $total_chunks; $i++) {
+            $part = $temp_dir . '/chunk_' . $i;
+            if (file_exists($part)) {
+                $in = fopen($part, 'rb');
+                while ($buff = fread($in, 1048576)) {
+                    fwrite($out, $buff);
+                }
+                fclose($in);
+                @unlink($part);
+            }
+        }
+        fclose($out);
+        @rmdir($temp_dir);
+
+        $file_size = file_exists($final_path) ? filesize($final_path) : 0;
+        $title_esc = SQLite3::escapeString($title ?: pathinfo($original_name, PATHINFO_FILENAME));
+        $desc_esc  = SQLite3::escapeString($description);
+        $fn_esc    = SQLite3::escapeString($final_filename);
+        $on_esc    = SQLite3::escapeString($original_name);
+        $uid       = intval($_SESSION['user_id'] ?? 1);
+
+        $db->exec("INSERT INTO files (title, description, filename, original_name, size, mime, uploaded_by, upload_date)
+            VALUES ('$title_esc', '$desc_esc', '$fn_esc', '$on_esc', $file_size, 'video/mp4', $uid, datetime('now'))");
+        logAction($db, $uid, 'UPLOAD_MOVIE', "Uploaded movie: $title ($original_name)");
+
+        echo json_encode([
+            'success' => true,
+            'completed' => true,
+            'filename' => $final_filename,
+            'size' => $file_size,
+            'title' => $title
+        ]);
+        exit;
+    }
+
+    echo json_encode(['success' => true, 'chunk' => $chunk, 'completed' => false]);
+    exit;
+}
+
 if (isset($_FILES['upload_file']) && isLoggedIn()) {
     $dir  = '/mnt/bigstorage/files/';
     $title = SQLite3::escapeString($_POST['title']);
@@ -1466,14 +1547,44 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
 
 <?php elseif ($page === 'files'): ?>
 <div class="card">
-  <div class="card-header"><div class="card-header-title"><i class="fas fa-upload"></i> Upload Movie / File</div></div>
+  <div class="card-header">
+    <div class="card-header-title"><i class="fas fa-film" style="color:var(--accent)"></i> Upload Movie to Local Server</div>
+    <span class="badge badge-blue">Chunked Upload • No Size Limit</span>
+  </div>
   <div class="card-body">
-    <form action="portal.php?page=files" method="post" enctype="multipart/form-data">
-      <div class="input-group" style="flex-wrap:wrap;gap:8px">
-        <div style="flex:1;min-width:140px"><label class="form-label">Title</label><input type="text" name="title" class="form-control" placeholder="Movie title" required></div>
-        <div style="flex:1;min-width:140px"><label class="form-label">Description</label><textarea name="description" class="form-control" rows="1" placeholder="Optional"></textarea></div>
-        <div style="flex:1;min-width:140px"><label class="form-label">File</label><input type="file" name="upload_file" class="form-control" required></div>
-        <div style="align-self:flex-end"><button type="submit" class="btn btn-primary"><i class="fas fa-cloud-upload-alt"></i> Upload</button></div>
+    <form id="chunkUploadForm" onsubmit="handleMovieUpload(event)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)) auto;gap:12px;align-items:end">
+        <div>
+          <label class="form-label">Movie Title</label>
+          <input type="text" id="movieTitle" class="form-control" placeholder="e.g. Inception (2010)" required>
+        </div>
+        <div>
+          <label class="form-label">Description / Genre</label>
+          <input type="text" id="movieDesc" class="form-control" placeholder="Action, Sci-Fi, Bangla...">
+        </div>
+        <div>
+          <label class="form-label">Video File (.mp4, .mkv, .avi, etc.)</label>
+          <input type="file" id="movieFile" class="form-control" accept="video/*,.mkv,.mp4,.avi,.mov,.webm,.ts" required onchange="onMovieFileSelected(this)">
+        </div>
+        <div>
+          <button type="submit" id="movieUploadBtn" class="btn btn-primary" style="height:38px"><i class="fas fa-cloud-upload-alt"></i> Upload Movie</button>
+        </div>
+      </div>
+      <div id="movieProgressWrap" style="display:none;margin-top:14px;background:var(--surface2);padding:14px;border-radius:10px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:6px">
+          <span id="movieUploadStatus"><i class="fas fa-spinner fa-spin"></i> Uploading chunks...</span>
+          <span id="movieUploadPct" style="color:var(--accent);font-family:'IBM Plex Mono'">0%</span>
+        </div>
+        <div style="background:rgba(0,0,0,.2);height:12px;border-radius:6px;overflow:hidden;margin-bottom:6px">
+          <div id="movieProgressBar" style="width:0%;height:100%;background:linear-gradient(90deg, #3b82f6, #10b981);transition:width .2s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);font-family:'IBM Plex Mono'">
+          <span id="movieUploadDetails">0 MB / 0 MB</span>
+          <span id="movieUploadSpeed">0 MB/s • ETA: Calculating...</span>
+        </div>
+        <div style="margin-top:8px;text-align:right">
+          <button type="button" class="btn btn-secondary btn-xs" onclick="cancelMovieUpload()"><i class="fas fa-times"></i> Cancel</button>
+        </div>
       </div>
     </form>
   </div>
@@ -1764,6 +1875,140 @@ function updateTotal(){let total=0;document.querySelectorAll('.amt-input').forEa
 function showHistory(cid,name){document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('histModal');fetch('get_history.php?cid='+cid).then(r=>r.text()).then(html=>{document.getElementById('histContent').innerHTML=html;});}
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
 function sendWaMsg(mobile,message){const cfg=getWaConfig();let phone=mobile.replace(/^0+/,'');if(!/^966/.test(phone))phone='966'+phone;const chatId=phone+'@c.us';const url=`${cfg.url}/api/sessions/${cfg.sid}/messages/send-text`;return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':cfg.key},body:JSON.stringify({chatId,text:message})});}
+
+
+let movieUploadAbortController = null;
+let movieUploadCancelled = false;
+
+function onMovieFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const titleInput = document.getElementById('movieTitle');
+  if (!titleInput.value.trim()) {
+    const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[._-]/g, " ");
+    titleInput.value = cleanName;
+  }
+}
+
+function cancelMovieUpload() {
+  if (confirm('Cancel this movie upload?')) {
+    movieUploadCancelled = true;
+    if (movieUploadAbortController) movieUploadAbortController.abort();
+    document.getElementById('movieProgressWrap').style.display = 'none';
+    document.getElementById('movieUploadBtn').disabled = false;
+    showToast('Upload cancelled', 'error');
+  }
+}
+
+async function handleMovieUpload(e) {
+  e.preventDefault();
+  const fileInput = document.getElementById('movieFile');
+  const file = fileInput.files[0];
+  if (!file) { showToast('Please select a file', 'error'); return; }
+
+  const title = document.getElementById('movieTitle').value.trim();
+  const desc = document.getElementById('movieDesc').value.trim();
+
+  const chunkSize = 8 * 1024 * 1024; // 8MB chunk
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  const sessionId = 'up_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+
+  const progWrap = document.getElementById('movieProgressWrap');
+  const bar = document.getElementById('movieProgressBar');
+  const pctEl = document.getElementById('movieUploadPct');
+  const statEl = document.getElementById('movieUploadStatus');
+  const detailsEl = document.getElementById('movieUploadDetails');
+  const speedEl = document.getElementById('movieUploadSpeed');
+  const btn = document.getElementById('movieUploadBtn');
+
+  progWrap.style.display = 'block';
+  btn.disabled = true;
+  movieUploadCancelled = false;
+  bar.style.width = '0%';
+  pctEl.textContent = '0%';
+  statEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading chunks (0/' + totalChunks + ')...';
+
+  const startTime = Date.now();
+  let uploadedBytes = 0;
+
+  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    if (movieUploadCancelled) break;
+
+    const start = chunkIdx * chunkSize;
+    const end = Math.min(start + chunkSize, file.size);
+    const chunkBlob = file.slice(start, end);
+
+    const fd = new FormData();
+    fd.append('action', 'upload_chunk');
+    fd.append('file', chunkBlob, file.name);
+    fd.append('chunk', chunkIdx);
+    fd.append('total_chunks', totalChunks);
+    fd.append('session_id', sessionId);
+    fd.append('title', title);
+    fd.append('description', desc);
+    fd.append('original_name', file.name);
+
+    movieUploadAbortController = new AbortController();
+
+    let attempt = 0;
+    let success = false;
+
+    while (attempt < 3 && !success && !movieUploadCancelled) {
+      attempt++;
+      try {
+        const resp = await fetch('portal.php', {
+          method: 'POST',
+          body: fd,
+          signal: movieUploadAbortController.signal
+        });
+        const data = await resp.json();
+        if (data.success) {
+          success = true;
+          uploadedBytes = end;
+
+          const pct = Math.round((uploadedBytes / file.size) * 100);
+          bar.style.width = pct + '%';
+          pctEl.textContent = pct + '%';
+
+          const uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (file.size / (1024 * 1024)).toFixed(1);
+          detailsEl.textContent = `${uploadedMB} MB / ${totalMB} MB`;
+
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const bytesPerSec = elapsedSec > 0 ? uploadedBytes / elapsedSec : 0;
+          const mbPerSec = (bytesPerSec / (1024 * 1024)).toFixed(1);
+          const remainingSec = bytesPerSec > 0 ? Math.round((file.size - uploadedBytes) / bytesPerSec) : 0;
+          const etaMin = Math.floor(remainingSec / 60);
+          const etaSec = remainingSec % 60;
+          speedEl.textContent = `${mbPerSec} MB/s • ETA: ${etaMin}m ${etaSec}s`;
+          statEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Uploading chunk ${chunkIdx + 1} of ${totalChunks}...`;
+
+          if (data.completed) {
+            statEl.innerHTML = '<i class="fas fa-check-circle" style="color:var(--success)"></i> Upload Complete!';
+            bar.style.width = '100%';
+            pctEl.textContent = '100%';
+            showToast('✅ Movie uploaded successfully: ' + title, 'success');
+            setTimeout(() => { window.location.reload(); }, 1200);
+            return;
+          }
+        } else {
+          throw new Error(data.error || 'Chunk error');
+        }
+      } catch (err) {
+        if (movieUploadCancelled) return;
+        if (attempt >= 3) {
+          statEl.innerHTML = '<i class="fas fa-exclamation-triangle" style="color:var(--danger)"></i> Upload failed';
+          showToast('❌ Upload failed on chunk ' + (chunkIdx + 1) + ': ' + err.message, 'error');
+          btn.disabled = false;
+          return;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  btn.disabled = false;
+}
 
 function showToast(msg, type = 'success') {
   const c = document.getElementById('toastContainer');
