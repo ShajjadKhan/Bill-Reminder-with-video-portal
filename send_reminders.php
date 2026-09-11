@@ -138,7 +138,7 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $message .= "🎬 Movies: $movie_server\n";
     $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
     $message .= "📞 Support (24/7):\n";
-    $message .= "$s1n: $s1p\n";
+    if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
     if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
         $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
 

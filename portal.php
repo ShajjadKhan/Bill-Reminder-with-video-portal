@@ -60,10 +60,10 @@ $defaults = [
     'openwa_api_key'   => 'dev-admin-key',
     'openwa_session_id'=> '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4',
     'movie_server'     => 'http://10.12.14.16:8082',
-    'support_1_name'   => 'Cyber Net',
+    'support_1_name'   => 'Shajjad Khan',
     'support_1_phone'  => '+966594266584',
-    'support_2_name'   => 'Riyad Hossain',
-    'support_2_phone'  => '+966546377863',
+    'support_2_name'   => '',
+    'support_2_phone'  => '',
 ];
 foreach ($defaults as $k => $v) {
     $ek = SQLite3::escapeString($k);
@@ -186,7 +186,7 @@ if ($action === 'send_manual_reminder' && isLoggedIn()) {
     $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
     $message .= "🎬 Movies: $movie_server\n";
     $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
-    $message .= "📞 Support (24/7):\n$s1n: $s1p\n";
+    $message .= "📞 Support (24/7):\n"; if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
     if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
     $message .= "\nPlease recharge on time to avoid service interruption. 🙏";
 
@@ -318,6 +318,19 @@ if (isLoggedIn() && isMaster() && $action === 'reset_password') {
     $db->exec("UPDATE users SET password='$pw' WHERE id=$id");
     logAction($db,$_SESSION['user_id'],'RESET_PASSWORD',"Reset password for user $id");
     $_SESSION['msg'] = "Password reset.";
+    header('Location: portal.php?page=admins'); exit;
+}
+if (isLoggedIn() && isMaster() && $action === 'save_support_settings') {
+    $s1n = SQLite3::escapeString(trim($_POST['support_1_name'] ?? ''));
+    $s1p = SQLite3::escapeString(trim($_POST['support_1_phone'] ?? ''));
+    $movie = SQLite3::escapeString(trim($_POST['movie_server'] ?? ''));
+    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_1_name', '$s1n')");
+    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_1_phone', '$s1p')");
+    if (!empty($movie)) {
+        $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('movie_server', '$movie')");
+    }
+    logAction($db,$_SESSION['user_id'],'UPDATE_SUPPORT',"Updated support contact to $s1n ($s1p)");
+    $_SESSION['msg'] = "Support contact settings updated successfully.";
     header('Location: portal.php?page=admins'); exit;
 }
 
@@ -809,61 +822,17 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .login-card .form-control{background:#0d1117;color:#e6edf3;border-color:#30363d}
 .login-card .form-label{color:#8b949e}
 .login-btn{background:var(--accent);color:#fff;width:100%;padding:10px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:background .15s}
-.login-btn:hover{background:var(--accent-dark)}
-@media(max-width:768px){
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .topbar-brand .brand-name{display:none}
-  .main-content{padding:12px}
-  .stat-value{font-size:22px}
-  .user-badge .role-label{display:none}
-  .wa-grid{grid-template-columns:1fr !important}
-}
 
-@media(max-width:400px){
-  .advance-form{grid-template-columns:1fr !important}
-  .advance-form button{width:100%}
-  .table-wrap table{font-size:11px}
-  .table-wrap th,.table-wrap td{padding:6px 4px}
-  .badge{font-size:9px;padding:2px 6px}
-  .nav-tabs-wrap a{padding:4px 7px;font-size:10px}
-  .stat-value{font-size:17px}
-  .card-header-title{font-size:13px}
-  h1,h2,h3{font-size:16px}
-  .modal-box{margin:4px;width:calc(100% - 8px)}
-}
-@media(max-width:480px){
-  .advance-form{grid-template-columns:1fr !important}
-  .advance-form button{width:100%}
-  .stats-grid{grid-template-columns:1fr 1fr}
-  .topbar{padding:6px 8px;gap:4px;height:auto;flex-wrap:wrap}
-  .topbar-brand{order:1}
-  .topbar-right{order:2;margin-left:auto}
-  .nav-tabs-wrap{order:3;width:100%;flex:0 0 100%;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;justify-content:flex-start;margin-top:2px}
-  .nav-tabs-wrap a{padding:5px 10px;font-size:11px;gap:4px}
-  .nav-tabs-wrap a i{display:inline-block;font-size:11px;opacity:.8}
-  .user-badge span:first-of-type{display:none}
-  .user-badge .role{display:inline-block}
-  .main-content{padding:8px}
-  .card-body{padding:12px}
-  .card-header{padding:10px 12px}
-  .stat-card{padding:12px}
-  .stat-value{font-size:20px}
-  .stat-icon{width:36px;height:36px;font-size:14px}
-  .btn-xs{padding:3px 8px;font-size:11px}
-  .modal-box{margin:8px;max-height:95vh}
-  .modal-body-custom{padding:12px}
-  .input-group{flex-wrap:wrap}
-  .input-group > div{min-width:100% !important}
-  .mobile-input-row{flex-wrap:nowrap !important}
-  .mobile-input-row select{flex:0 0 85px !important;font-size:12px !important}
-  .mobile-input-row input{flex:1 !important;min-width:0 !important}
-  table{font-size:11px}
-  thead th{padding:7px 6px;font-size:10px;white-space:nowrap}
-  tbody td{padding:7px 6px;white-space:nowrap}
-  .table-wrap,.card .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .due-tag{font-size:10px}
-  .topbar-brand .brand-name{display:block;font-size:13px}
-}
+.login-btn:hover{background:var(--accent-dark)}
+
+/* Base Helpers for Responsive Tables */
+.mobile-only-icon{display:none}
+.mobile-action-label{display:none}
+.cust-actions-wrap{display:inline-flex;gap:4px}
+.mobile-card-actions{display:inline-flex;gap:4px}
+.month-cb{width:18px;height:18px;cursor:pointer}
+
+/* Dark Theme Overrides */
 [data-theme="dark"] .card,
 [data-theme="dark"] .modal-box,
 [data-theme="dark"] .search-results,
@@ -879,13 +848,137 @@ tbody td{padding:10px 12px;vertical-align:middle}
 [data-theme="dark"] .modal-close{background:var(--surface2);color:var(--text-muted)}
 [data-theme="dark"] .login-wrap{background:var(--nav-bg)}
 
-/* Responsive Mobile Card View & Toast Styles */
+/* Animations & Filters */
 @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .toast-msg { animation: slideInRight 0.25s ease-out; }
-.filter-pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted); transition: all .15s; }
+.filter-pill { padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted); transition: all .15s; display:inline-flex; align-items:center; justify-content:center; }
 .filter-pill:hover, .filter-pill.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+/* ============================================================ */
+/* RESPONSIVE LAYOUT & PHONE USABILITY                          */
+/* ============================================================ */
+
+/* Topbar Tablet & Mobile Wrapping */
+@media(max-width: 860px) {
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
+    height: auto;
+    flex-wrap: wrap;
+  }
+  .topbar-brand { order: 1; }
+  .topbar-right { order: 2; margin-left: auto; }
+  .nav-tabs-wrap {
+    order: 3;
+    width: 100%;
+    flex: 0 0 100%;
+    border-top: 1px solid rgba(255,255,255,.08);
+    padding: 8px 0 4px 0;
+    justify-content: flex-start;
+    margin-top: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 5px;
+  }
+  .nav-tabs-wrap a {
+    padding: 7px 12px;
+    font-size: 12px;
+    min-height: 36px;
+    flex-shrink: 0;
+  }
+  .user-badge span:first-of-type { display: none; }
+  .user-badge .role { display: inline-block; }
+}
+
+/* Smartphone & Tablet Common Enhancements (max-width: 768px) */
 @media(max-width: 768px) {
+  /* Prevent iOS Safari Auto-Zoom on form input focus (must be >= 16px) */
+  input, select, textarea, .form-control, .form-select {
+    font-size: 16px !important;
+  }
+  .form-control, .form-select {
+    min-height: 42px;
+  }
+  
+  /* Touch-friendly target heights */
+  .btn {
+    min-height: 38px;
+  }
+  .btn-xs {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 12px;
+    gap: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-sm {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  .month-cb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .main-content { padding: 10px 8px; }
+  .card { border-radius: 10px; margin-bottom: 12px; }
+  .card-body { padding: 12px; }
+  .card-header { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .stat-card { padding: 12px; }
+  .stat-value { font-size: 20px; }
+  .stat-icon { width: 38px; height: 38px; font-size: 15px; }
+  
+  .wa-grid { grid-template-columns: 1fr !important; }
+  .advance-form { grid-template-columns: 1fr !important; }
+  .advance-form button { width: 100%; min-height: 44px; }
+  
+  /* Modal Box on Mobile */
+  .modal-overlay { padding: 8px !important; }
+  .modal-box {
+    margin: 0 auto !important;
+    width: calc(100% - 16px) !important;
+    max-height: 92vh !important;
+    border-radius: 14px !important;
+  }
+  .modal-body-custom {
+    padding: 14px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-box form button[type=submit] {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  /* Form Groups on Mobile */
+  .input-group { flex-wrap: wrap; }
+  .input-group > div { min-width: 100% !important; }
+  .mobile-input-row { display: flex; gap: 6px; width: 100%; }
+  .mobile-input-row select { flex: 0 0 100px !important; }
+  .mobile-input-row input { flex: 1 !important; min-width: 0 !important; }
+
+  /* Login Card on Mobile */
+  .login-wrap { padding: 14px; }
+  .login-card { padding: 24px 18px; border-radius: 14px; }
+
+  /* Table horizontal scroll wrapper */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Responsive Collections Card View */
   .responsive-coll-table table, 
   .responsive-coll-table thead, 
   .responsive-coll-table tbody, 
@@ -898,7 +991,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     background: var(--surface) !important;
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 12px 14px;
+    padding: 14px;
     box-shadow: 0 2px 6px rgba(0,0,0,.04);
   }
   .responsive-coll-table tbody td {
@@ -907,8 +1000,99 @@ tbody td{padding:10px 12px;vertical-align:middle}
     white-space: normal;
   }
   .responsive-coll-table tbody td:first-child { display: none; }
-  .mobile-card-actions { display: flex; gap: 8px; margin-top: 8px; }
-  .mobile-card-actions .btn { flex: 1; padding: 8px 4px; font-size: 12px; font-weight: 600; }
+  .mobile-card-actions {
+    display: flex !important;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+  .mobile-card-actions .btn {
+    flex: 1;
+    min-height: 40px;
+    padding: 8px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    justify-content: center;
+  }
+
+  /* Responsive Customers Card View */
+  .responsive-cust-table table, 
+  .responsive-cust-table thead, 
+  .responsive-cust-table tbody, 
+  .responsive-cust-table th, 
+  .responsive-cust-table td, 
+  .responsive-cust-table tr { display: block; }
+  .responsive-cust-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-cust-table tbody tr {
+    margin-bottom: 14px;
+    background: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 14px 12px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  }
+  .responsive-cust-table tbody td {
+    border: none;
+    padding: 3px 0;
+    white-space: normal;
+  }
+  .responsive-cust-table tbody td.cust-idx-cell { display: none; }
+  .responsive-cust-table .cust-card-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .responsive-cust-table .cust-hist-link {
+    display: inline-block;
+    margin-top: 2px;
+    font-size: 12px;
+  }
+  .responsive-cust-table .cust-wa-cell {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .responsive-cust-table .cust-wa-cell .btn-whatsapp {
+    width: 100%;
+    min-height: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    justify-content: center;
+  }
+  .responsive-cust-table .cust-actions-cell {
+    margin-top: 6px;
+  }
+  .responsive-cust-table .cust-actions-wrap {
+    display: flex !important;
+    gap: 8px;
+    width: 100%;
+  }
+  .responsive-cust-table .cust-actions-wrap .btn {
+    flex: 1;
+    min-height: 40px;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mobile-only-icon { display: inline-block; opacity: 0.6; font-size: 11px; margin-right: 4px; }
+  .mobile-action-label { display: inline; }
+}
+
+/* Small Smartphone Refinements (max-width: 480px) */
+@media(max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  .stat-card { padding: 10px; }
+  .stat-label { font-size: 10px; }
+  .stat-value { font-size: 18px; }
+  .topbar-brand .brand-name { font-size: 14px; }
+  .card-header-title { font-size: 13px; }
+  table { font-size: 11px; }
+  thead th, tbody td { padding: 6px 5px; }
+  .due-tag { font-size: 10px; }
 }
 </style>
 </head>
@@ -1146,9 +1330,11 @@ tbody td{padding:10px 12px;vertical-align:middle}
           <td><?php foreach($p['unpaid'] as $u): ?><div style="font-size:12px"><span class="due-tag"><?= date('M Y',strtotime($u['month'].'-01')).' — '.$u['due'].' SAR' ?></span></div><?php endforeach; ?></td>
           <td><strong style="color:var(--danger);font-family:'IBM Plex Mono'"><?= $total_due ?> SAR</strong></td>
           <td style="white-space:nowrap">
-            <button class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
-            <button class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
-            <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i></button>
+            <div class="mobile-card-actions">
+              <button class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
+              <button class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
+              <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
+            </div>
           </td>
         </tr>
       <?php endforeach; endif; ?>
@@ -1341,31 +1527,36 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
     <div class="card-header-title"><i class="fas fa-users"></i> All Customers</div>
     <span class="badge badge-blue"><?= $total_customers ?> active</span>
   </div>
-  <div class="table-wrap">
+  <div class="table-wrap responsive-cust-table">
     <table>
-      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected Since</th><th>WhatsApp</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected</th><th>WhatsApp</th><th>Actions</th></tr></thead>
       <tbody id="custTbody">
       <?php $i=0;$custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
       while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?>
         <tr data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= $c['building'] ?>" data-r="<?= $c['room'] ?>">
-          <td class="mono" style="color:var(--text-muted)"><?= $i ?></td>
-          <td><strong><?= htmlspecialchars($c['name']) ?></strong><br><a href="#" style="font-size:11px;color:var(--accent)" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')">View History</a></td>
-          <td class="mono"><?= $c['mobile'] ?></td>
-          <td style="color:var(--text-muted);font-size:12px"><?= trim($c['building'].' '.$c['apartment'].' R'.$c['room']) ?></td>
+          <td class="mono cust-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
+          <td>
+            <div class="cust-card-title"><strong><?= htmlspecialchars($c['name']) ?></strong></div>
+            <a href="#" class="cust-hist-link" style="font-size:11px;color:var(--accent)" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')"><i class="fas fa-history"></i> History</a>
+          </td>
+          <td class="mono"><a href="tel:<?= $c['mobile'] ?>" style="color:inherit;text-decoration:none"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $c['mobile'] ?></a></td>
+          <td style="color:var(--text-muted);font-size:12px"><i class="fas fa-map-marker-alt mobile-only-icon"></i><?= trim($c['building'].' '.$c['apartment'].' R'.$c['room']) ?></td>
           <td><span class="badge badge-blue">Day <?= $c['billing_day'] ?></span></td>
-          <td><span class="badge badge-purple">Day <?= intval($c['pay_by_day'] ?: 10) ?></span></td>
+          <td><span class="badge badge-purple">Pay By <?= intval($c['pay_by_day'] ?: 10) ?></span></td>
           <td><span class="badge badge-green mono"><?= floatval($c['monthly_fee']?:30) ?> SAR</span></td>
           <td>
             <?php if (empty($c['billing_start_date'])): ?>
               <span class="badge badge-red" title="Missing connection date - billing will be wrong!"><i class="fas fa-triangle-exclamation"></i> MISSING</span>
             <?php else: ?>
-              <span class="mono" style="font-size:12px"><?= date('d M Y', strtotime($c['billing_start_date'])) ?></span>
+              <span class="mono" style="font-size:12px"><i class="fas fa-calendar-day mobile-only-icon"></i><?= date('d M Y', strtotime($c['billing_start_date'])) ?></span>
             <?php endif; ?>
           </td>
-          <td><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i></button></td>
-          <td style="white-space:nowrap">
-            <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= $c['building'] ?>','<?= $c['apartment'] ?>','<?= $c['room'] ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>)"><i class="fas fa-edit"></i></button>
-            <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
+          <td class="cust-wa-cell"><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button></td>
+          <td class="cust-actions-cell" style="white-space:nowrap">
+            <div class="cust-actions-wrap">
+              <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= $c['building'] ?>','<?= $c['apartment'] ?>','<?= $c['room'] ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>)"><i class="fas fa-edit"></i> Edit</button>
+              <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
+            </div>
           </td>
         </tr>
       <?php }?>
@@ -1838,6 +2029,34 @@ function startBroadcast(){
         <button type="submit" class="btn btn-warning"><i class="fas fa-key"></i> Reset</button>
       </form>
     </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-header">
+    <div class="card-header-title"><i class="fas fa-headset" style="color:var(--accent)"></i> Billing Reminders & Support Contact</div>
+  </div>
+  <div class="card-body">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+      These contact details are included in automated WhatsApp daily reminders, manual reminders, and payment receipts. No hardcoded or dummy preset numbers are sent.
+    </p>
+    <form method="post" style="max-width:550px">
+      <input type="hidden" name="action" value="save_support_settings">
+      <div style="margin-bottom:12px">
+        <label class="form-label">Support Contact Name</label>
+        <input type="text" name="support_1_name" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_name')) ?>" placeholder="e.g. Shajjad Khan" required>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="form-label">Support Phone Number</label>
+        <input type="text" name="support_1_phone" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_phone')) ?>" placeholder="e.g. +966594266584" required>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> International format with country code (e.g. +966594266584).</div>
+      </div>
+      <div style="margin-bottom:16px">
+        <label class="form-label">Movie Server URL</label>
+        <input type="text" name="movie_server" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'movie_server')) ?>" placeholder="http://10.12.14.16:8082">
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Support Settings</button>
+    </form>
   </div>
 </div>
 <?php endif; ?>

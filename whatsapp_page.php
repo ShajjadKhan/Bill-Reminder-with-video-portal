@@ -121,6 +121,12 @@ $dark = isset($_COOKIE['darkMode']) && $_COOKIE['darkMode'] === 'enabled';
         .dark .card-header { border-color: #2d2d44; }
         .hint { font-size: 0.85rem; color: #6c757d; }
         .dark .hint { color: #a0a0c0; }
+        @media(max-width: 768px) {
+            .container { padding-left: 12px !important; padding-right: 12px !important; }
+            input, select, textarea, .form-control, .form-select { font-size: 16px !important; min-height: 44px; }
+            .btn-wa { width: 100%; min-height: 44px; font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+            .qr-container img { max-width: 220px; }
+        }
     </style>
 </head>
 <body class="<?= $dark ? 'dark' : '' ?>">

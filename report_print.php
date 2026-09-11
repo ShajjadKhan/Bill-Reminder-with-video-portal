@@ -34,10 +34,18 @@ while ($r = $rows->fetchArray(SQLITE3_ASSOC)) {
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <title>CyberNet Collection Report</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, sans-serif; color: #1a202c; background: #fff; padding: 30px; max-width: 900px; margin: 0 auto; }
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .meta { flex-direction: column; gap: 4px; }
+    table { font-size: 11px; }
+    th, td { padding: 5px 6px; }
+  }
   .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #1a202c; padding-bottom: 16px; margin-bottom: 20px; }
   .header h1 { margin: 0; font-size: 24px; }
   .header .subtitle { color: #718096; font-size: 13px; margin-top: 4px; }

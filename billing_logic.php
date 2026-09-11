@@ -278,7 +278,7 @@ if (!function_exists('buildReceiptMsg')) {
         $msg .= "  🎬 Movies: $movie\n";
         $msg .= "  ⚽ Live Football: http://10.12.14.16:8086\n\n";
         $msg .= "📞 Support (24/7):\n";
-        $msg .= "  $s1n: $s1p\n";
+        if ($s1n && $s1p) $msg .= "  $s1n: $s1p\n";
         if ($s2n && $s2p) $msg .= "  $s2n: $s2p\n";
         $msg .= "\nThank you for your payment! 🙏";
         return $msg;
