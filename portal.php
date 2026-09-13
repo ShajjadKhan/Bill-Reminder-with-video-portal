@@ -139,37 +139,50 @@ if ($action === 'send_manual_reminder' && isLoggedIn()) {
     $cust = $db->querySingle("SELECT * FROM customers WHERE id=$cid", true);
     if (!$cust) { echo json_encode(['ok'=>false,'error'=>'Customer not found']); exit; }
 
+    $current_month = date('Y-m');
+    $unpaid = getUnpaidMonths($db, $cid, $current_month);
+    $total_unpaid = 0;
+    foreach ($unpaid as $u) {
+        $total_unpaid += floatval($u['due']);
+    }
+    $total_unpaid = round($total_unpaid, 2);
+
+    $bal = getCustomerBalance($db, $cid);
+    $account_balance = $bal ? floatval($bal['balance']) : -$total_unpaid;
+    $owes = $bal ? floatval($bal['owes']) : $total_unpaid;
+
+    $paid_this_month = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$cid AND (strftime('%Y-%m', collected_date)='$current_month' OR month_year='$current_month')");
+
+    if (empty($unpaid) || $total_unpaid <= 0) {
+        echo json_encode(['ok'=>false, 'error'=>'Customer has no unpaid months (all bills are settled)']);
+        exit;
+    }
+
+    if ($account_balance >= 0) {
+        echo json_encode(['ok'=>false, 'error'=>"Customer has positive balance (+{$account_balance} SAR)"]);
+        exit;
+    }
+
+    if ($paid_this_month > 0 && ($total_unpaid <= 10 || $owes <= 10)) {
+        echo json_encode(['ok'=>false, 'error'=>"Customer paid {$paid_this_month} SAR this month and remaining due is under 10 SAR ({$total_unpaid} SAR)"]);
+        exit;
+    }
+
     $fee = max(1, floatval($cust['monthly_fee'] ?: 30));
+    $due_day = (int)($cust['due_day'] ?: $cust['billing_day'] ?: 1);
     $pay_by_day = intval($cust['pay_by_day'] ?? 10) ?: 10;
-    $join_dt = new DateTime($cust['billing_start_date']);
+    $join_dt = new DateTime($cust['billing_start_date'] ?: date('Y-m-01'));
     $today = new DateTime(date('Y-m-d'));
-    $daily_rate = round($fee / 30, 4);
-    $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id=$cid AND amount>0");
-    $days_covered = $daily_rate > 0 ? (int)floor($total_paid / $daily_rate) : 0;
 
-    $vholds = [];
-    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$cid");
-    while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
-        $vholds[] = ['s' => new DateTime($h['hold_start']), 'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : clone $today];
-    }
-
-    $active_until = null;
-    if ($days_covered > 0) {
-        $cnt = 0; $cur = clone $join_dt;
-        for ($i = 0; $i < 5000; $i++) {
-            $oh = false;
-            foreach ($vholds as $vh) { if ($cur >= $vh['s'] && $cur <= $vh['e']) { $oh = true; break; } }
-            if (!$oh) { $cnt++; if ($cnt >= $days_covered) { $active_until = clone $cur; break; } }
-            $cur->modify('+1 day');
-        }
-        if (!$active_until) $active_until = clone $cur;
-    } else {
-        $active_until = (clone $join_dt)->modify('-1 day');
-    }
+    $oldest_unpaid_month = $unpaid[0]['month'];
+    $oldest_dt = new DateTime($oldest_unpaid_month . '-01');
+    $dim = (int)$oldest_dt->format('t');
+    $safe_day = min($due_day, $dim);
+    $active_until = new DateTime($oldest_unpaid_month . '-' . sprintf('%02d', $safe_day));
 
     $expired = $active_until < $today;
     $days_diff = abs($today->diff($active_until)->days);
-    $movie_server = getSetting($db, 'movie_server');
+    $movie_server = getSetting($db, 'movie_server') ?: 'http://10.12.14.16:8082';
     $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
     $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
 
@@ -178,17 +191,18 @@ if ($action === 'send_manual_reminder' && isLoggedIn()) {
     $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
     if ($expired) {
         $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
-        $message .= "💰 Please recharge $fee SAR to continue service\n";
+        $message .= "💰 Please recharge $total_unpaid SAR to continue service\n";
     } else {
         $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
-        $message .= "💰 Please recharge $fee SAR before it ends\n";
+        $message .= "💰 Please recharge $total_unpaid SAR before it ends\n";
     }
     $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
     $message .= "🎬 Movies: $movie_server\n";
     $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
-    $message .= "📞 Support (24/7):\n"; if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
+    $message .= "📞 Support (24/7):\n";
+    if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
     if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
-    $message .= "\nPlease recharge on time to avoid service interruption. 🙏";
+    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
 
     $result = sendWhatsAppMessage($db, $cust['mobile'], $message);
     if ($result) {

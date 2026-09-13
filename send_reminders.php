@@ -1,138 +1,116 @@
 <?php
+require_once __DIR__ . '/billing_logic.php';
+
 $db = new SQLite3('/home/tserver/billing_reminder/bills.db');
+$db->busyTimeout(10000);
 date_default_timezone_set('Asia/Riyadh');
 
-function getSetting($db, $key) {
-    $v = $db->querySingle("SELECT value FROM settings WHERE key='" . SQLite3::escapeString($key) . "'");
-    return $v ?: '';
-}
-$movie_server = getSetting($db, 'movie_server');
+$movie_server = getSetting($db, 'movie_server') ?: 'http://10.12.14.16:8082';
 $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
 $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
 
 $today = new DateTime();
 $target_5 = (clone $today)->modify('+5 days');
 $target_2 = (clone $today)->modify('+2 days');
-$target_days = array_unique([$target_5->format('j'), $target_2->format('j')]);
+$target_days = array_unique([(int)$target_5->format('j'), (int)$target_2->format('j')]);
 $current_month = $today->format('Y-m');
 
-$wa_sid = getSetting($db, 'openwa_session_id') ?: '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4';
-$openwa_url = "http://localhost:2785/api/sessions/{$wa_sid}/messages/send-text";
-$api_key = "dev-admin-key";
-
-$customers = $db->query("SELECT id, name, mobile, due_day, billing_start_date, monthly_fee, pay_by_day FROM customers WHERE status='active'");
+$customers = $db->query("SELECT id, name, mobile, due_day, billing_day, billing_start_date, monthly_fee, pay_by_day FROM customers WHERE status='active'");
 
 $sent = 0;
 $skipped = 0;
 
 while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
-    // Check if due_day matches target days
-    $due_day = (int)$c['due_day'];
-    // Handle due_day 31 - treat as last day of month
+    $cid = (int)$c['id'];
+    $due_day = (int)($c['due_day'] ?: $c['billing_day'] ?: 1);
     $days_in_month = (int)date('t');
     $effective_due = min($due_day, $days_in_month);
     
-    if (!in_array($effective_due, $target_days)) continue;
+    // Check if due_day matches target days (5 days or 2 days before due day)
+    if (!in_array($effective_due, $target_days)) {
+        continue;
+    }
 
-    // Calculate total paid vs total owed across all months
-    $start = new DateTime($c['billing_start_date']);
-    $now = new DateTime(date('Y-m-01'));
-    $period = new DatePeriod($start, new DateInterval('P1M'), $now->modify('+1 month'));
-    
-    // Vacation holds: full dates, NULL end = still away
+    // 1. Vacation hold check: full dates, NULL end = still away
     $vholds = [];
     $on_vacation_now = false;
     $today_dt = new DateTime(date('Y-m-d'));
-    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id={$c['id']}");
+    $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$cid");
     while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
         $vs = new DateTime($h['hold_start']);
         $ve = $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'));
         $vholds[] = ['s' => $vs, 'e' => $ve];
-        if (!$h['hold_end'] && $today_dt >= $vs) $on_vacation_now = true;
+        if (!$h['hold_end'] && $today_dt >= $vs) {
+            $on_vacation_now = true;
+        }
     }
     if ($on_vacation_now) {
         echo "SKIPPED (on vacation): {$c['name']}\n";
         $skipped++;
         continue;
     }
-    
+
     $fee = max(1, floatval($c['monthly_fee'] ?: 30));
-    $total_owed = 0;
-    $total_paid = 0;
-    $unpaid_months = [];
-    
-    foreach ($period as $dt) {
-        $month_year = $dt->format('Y-m');
-        $mStart = new DateTime($month_year . '-01');
-        $mEnd = clone $mStart; $mEnd->modify('last day of this month');
-        $dim = (int)$mEnd->format('j');
-        $billable = 0; $d = clone $mStart;
-        while ($d <= $mEnd) {
-            $oh = false;
-            foreach ($vholds as $vh) { if ($d >= $vh['s'] && $d <= $vh['e']) { $oh = true; break; } }
-            if (!$oh) $billable++;
-            $d->modify('+1 day');
-        }
-        if ($billable == 0) continue;
-        $mfee = round($fee * $billable / $dim, 2);
-        $total_owed += $mfee;
-        $paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id={$c['id']} AND month_year='$month_year'");
-        $total_paid += $paid;
-        $due = round($mfee - $paid, 2);
-        if ($due > 0) {
-            $unpaid_months[] = $dt->format('F Y') . ": $due SAR";
-        }
+
+    // 2. Portal unified unpaid months calculation ("all pendings are normal")
+    $unpaid = getUnpaidMonths($db, $cid, $current_month);
+    $total_unpaid = 0;
+    foreach ($unpaid as $u) {
+        $total_unpaid += floatval($u['due']);
     }
+    $total_unpaid = round($total_unpaid, 2);
 
-    $balance = $total_paid - $total_owed;
+    $bal = getCustomerBalance($db, $cid);
+    $account_balance = $bal ? floatval($bal['balance']) : -$total_unpaid;
+    $owes = $bal ? floatval($bal['owes']) : $total_unpaid;
 
-    // Skip if customer has credit (paid ahead) or no unpaid months
-    if ($balance >= 0 || empty($unpaid_months)) {
-        echo "SKIPPED (paid/credit): {$c['name']}\n";
+    // Skip Condition A: Customer is NOT pending in the portal (0 unpaid months / fully paid)
+    if (empty($unpaid) || $total_unpaid <= 0) {
+        echo "SKIPPED (paid/normal - 0 unpaid months in portal): {$c['name']}\n";
         $skipped++;
         continue;
     }
 
-    $total_due = abs($balance);
-    $pay_by_day = intval($c['pay_by_day'] ?? 10) ?: 10;
-    $join_dt = new DateTime($c['billing_start_date']);
-    $daily_rate = round($fee / 30, 4);
-    $days_covered = $daily_rate > 0 ? (int)floor($total_paid / $daily_rate) : 0;
-
-    // Walk day by day from join date, skipping vacation days, to find "active until" date
-    $active_until = null;
-    if ($days_covered > 0) {
-        $cnt = 0; $cur = clone $join_dt;
-        for ($i = 0; $i < 5000; $i++) {
-            $oh = false;
-            foreach ($vholds as $vh) { if ($cur >= $vh['s'] && $cur <= $vh['e']) { $oh = true; break; } }
-            if (!$oh) {
-                $cnt++;
-                if ($cnt >= $days_covered) { $active_until = clone $cur; break; }
-            }
-            $cur->modify('+1 day');
-        }
-        if (!$active_until) $active_until = clone $cur;
-    } else {
-        $active_until = (clone $join_dt)->modify('-1 day');
+    // Skip Condition B: Customer has credit balance
+    if ($account_balance >= 0) {
+        echo "SKIPPED (paid ahead / credit balance +{$account_balance} SAR): {$c['name']}\n";
+        $skipped++;
+        continue;
     }
+
+    // Skip Condition C: User explicit rule — if customer paid this month AND still due under 10 SAR
+    $paid_this_month = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=$cid AND (strftime('%Y-%m', collected_date)='$current_month' OR month_year='$current_month')");
+
+    if ($paid_this_month > 0 && ($total_unpaid <= 10 || $owes <= 10)) {
+        echo "SKIPPED (paid {$paid_this_month} SAR this month, remaining due <= 10 SAR [unpaid: {$total_unpaid} SAR, owes: {$owes} SAR]): {$c['name']}\n";
+        $skipped++;
+        continue;
+    }
+
+    // If we reach here, the customer has genuine unpaid balance > 10 SAR and is pending
+    $total_due = $total_unpaid;
+    $pay_by_day = intval($c['pay_by_day'] ?? 10) ?: 10;
+    $join_dt = new DateTime($c['billing_start_date'] ?: date('Y-m-01'));
+
+    // Determine active_until based on the oldest unpaid month
+    $oldest_unpaid_month = $unpaid[0]['month'];
+    $oldest_dt = new DateTime($oldest_unpaid_month . '-01');
+    $dim = (int)$oldest_dt->format('t');
+    $safe_day = min($effective_due, $dim);
+    $active_until = new DateTime($oldest_unpaid_month . '-' . sprintf('%02d', $safe_day));
 
     $expired = $active_until < $today;
     $days_diff = abs($today->diff($active_until)->days);
 
-    $movie_server = getSetting($db, 'movie_server');
-    $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
-    $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
-    
     $message = "📶 CYBERNET ACCOUNT STATUS\n";
     $message .= "Assalamu Alaikum {$c['name']}!\n\n";
     $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
     if ($expired) {
         $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
-        $message .= "💰 Please recharge $fee SAR to continue service\n";
+        $message .= "💰 Please recharge $total_due SAR to continue service\n";
     } else {
         $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
-        $message .= "💰 Please recharge $fee SAR before it ends\n";
+        $message .= "💰 Please recharge $total_due SAR before it ends\n";
     }
     $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
     $message .= "🎬 Movies: $movie_server\n";
@@ -140,27 +118,15 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $message .= "📞 Support (24/7):\n";
     if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
     if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
-        $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
+    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
 
-    $phone = ltrim(trim($c['mobile']), '0');
-    if (!preg_match('/^966/', $phone)) $phone = '966' . $phone;
-    $chatId = $phone . "@c.us";
-
-    // DISABLED FOR TESTING - uncomment to enable
-    
-    $ch = curl_init($openwa_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', "X-API-Key: $api_key"]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['chatId' => $chatId, 'text' => $message]));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    $result = curl_exec($ch);
-    curl_close($ch);
-    
+    // Send via sendWhatsAppMessage from billing_logic.php
+    if (!getenv('DRY_RUN')) { $res = sendWhatsAppMessage($db, $c['mobile'], $message); }
 
     $status_str = $expired ? "-{$days_diff}d (expired)" : "+{$days_diff}d left";
-    echo "SENT to {$c['name']} ({$c['mobile']}) - due day {$c['due_day']}, status: $status_str, total due: $total_due SAR\n";
+    echo "SENT to {$c['name']} ({$c['mobile']}) - due day {$due_day}, status: $status_str, total due: $total_due SAR\n";
     $sent++;
 }
 
-echo "\nDone. Would send: $sent | Skipped (paid): $skipped\n";
+echo "\nDone. Sent: $sent | Skipped (paid/normal): $skipped\n";
 ?>
