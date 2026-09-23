@@ -460,13 +460,13 @@ if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
 // ============================================================
 if (isLoggedIn() && isAdmin() && $action === 'save_customer') {
     $id          = intval($_POST['id'] ?? 0);
-    $name        = SQLite3::escapeString($_POST['name']);
-    $mobile      = SQLite3::escapeString($_POST['mobile']);
-    $building    = SQLite3::escapeString($_POST['building']);
-    $apartment   = SQLite3::escapeString($_POST['apartment']);
-    $room        = SQLite3::escapeString($_POST['room']);
+    $name        = SQLite3::escapeString(trim($_POST['name'] ?? ''));
+    $mobile      = SQLite3::escapeString(trim($_POST['mobile'] ?? ''));
+    $building    = SQLite3::escapeString(trim($_POST['building'] ?? ''));
+    $apartment   = SQLite3::escapeString(trim($_POST['apartment'] ?? ''));
+    $room        = SQLite3::escapeString(trim($_POST['room'] ?? ''));
     $billing_day = intval($_POST['billing_day']);
-    $join_date   = SQLite3::escapeString($_POST['billing_start_date']);
+    $join_date   = SQLite3::escapeString(trim($_POST['billing_start_date'] ?? ''));
     $monthly_fee = max(1, floatval($_POST['monthly_fee']));
     $pay_by_day  = max(1, min(31, intval($_POST['pay_by_day'] ?: 10)));
 
@@ -1288,9 +1288,9 @@ tbody td{padding:10px 12px;vertical-align:middle}
       <div>
         <label style="font-size:12px;font-weight:600;color:var(--text-muted)">Customer</label>
         <div style="position:relative">
-          <input type="text" id="advCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px">
+          <input type="text" id="advCustSearch" class="form-control" placeholder="Type name, mobile, room… (min 2 chars)" autocomplete="off" style="font-size:13px">
           <input type="hidden" name="customer_id" id="advCustId" required>
-          <div id="advCustSug" style="position:absolute;top:100%;left:0;right:0;background:#1a1a2e;border:1px solid #2d2d44;border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)"></div>
+          <div id="advCustSug" class="search-results" style="position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;z-index:9999;display:none"></div>
         </div>
       </div>
       <div>
@@ -1432,9 +1432,9 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
         <div>
           <label style="display:block;font-size:11px;font-weight:600;margin-bottom:4px;color:var(--text-muted)">Customer</label>
           <div style="position:relative">
-            <input type="text" id="holdCustSearch" class="form-control" placeholder="Type customer name…" autocomplete="off" style="font-size:13px" required>
+            <input type="text" id="holdCustSearch" class="form-control" placeholder="Type name, mobile, room… (min 2 chars)" autocomplete="off" style="font-size:13px" required>
             <input type="hidden" name="customer_id" id="holdCustId" required>
-            <div id="holdCustSug" style="position:absolute;top:100%;left:0;right:0;background:#1a1a2e;border:1px solid #2d2d44;border-radius:8px;max-height:220px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)"></div>
+            <div id="holdCustSug" class="search-results" style="position:absolute;top:100%;left:0;right:0;max-height:240px;overflow-y:auto;z-index:9999;display:none"></div>
           </div>
         </div>
         <div>
@@ -1530,16 +1530,17 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
     <button class="btn btn-success btn-sm" onclick="openModal('custModal');clearCustForm()"><i class="fas fa-plus"></i> Add Customer</button>
   </div>
   <div class="card-body">
-    <div class="search-wrap">
+    <div class="search-wrap" style="position:relative">
       <i class="fas fa-search search-icon"></i>
-      <input type="text" id="custSearch" class="form-control" placeholder="Name, mobile, building, room…">
+      <input type="text" id="custSearch" class="form-control" placeholder="Search by name, 05/966 mobile, building, room… (min 2 chars)" autocomplete="off" style="padding-right:32px">
+      <button type="button" id="custSearchClear" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px" title="Clear search"><i class="fas fa-times-circle"></i></button>
     </div>
   </div>
 </div>
 <div class="card">
   <div class="card-header">
     <div class="card-header-title"><i class="fas fa-users"></i> All Customers</div>
-    <span class="badge badge-blue"><?= $total_customers ?> active</span>
+    <span class="badge badge-blue" id="custCountBadge"><?= $total_customers ?> active</span>
   </div>
   <div class="table-wrap responsive-cust-table">
     <table>
@@ -1547,7 +1548,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
       <tbody id="custTbody">
       <?php $i=0;$custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
       while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?>
-        <tr data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= $c['building'] ?>" data-r="<?= $c['room'] ?>">
+        <tr data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= htmlspecialchars($c['building'] ?? '') ?>" data-apt="<?= htmlspecialchars($c['apartment'] ?? '') ?>" data-r="<?= htmlspecialchars($c['room'] ?? '') ?>">
           <td class="mono cust-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
           <td>
             <div class="cust-card-title"><strong><?= htmlspecialchars($c['name']) ?></strong></div>
@@ -1568,7 +1569,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
           <td class="cust-wa-cell"><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button></td>
           <td class="cust-actions-cell" style="white-space:nowrap">
             <div class="cust-actions-wrap">
-              <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= $c['building'] ?>','<?= $c['apartment'] ?>','<?= $c['room'] ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>)"><i class="fas fa-edit"></i> Edit</button>
+              <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>)"><i class="fas fa-edit"></i> Edit</button>
               <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
             </div>
           </td>
@@ -1579,60 +1580,84 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
   </div>
 </div>
 <div class="modal-overlay" id="custModal">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width:580px">
     <div class="modal-header-custom">
       <h5><i class="fas fa-user-plus" style="color:var(--success)"></i> <span id="custModalTitle">Add Customer</span></h5>
       <button class="modal-close" onclick="closeModal('custModal')">×</button>
     </div>
     <div class="modal-body-custom">
-      <form method="post">
+      <form method="post" id="custForm">
         <input type="hidden" name="action" value="save_customer">
         <input type="hidden" name="id" id="cust_id">
-        <div class="input-group" style="margin-bottom:12px">
-          <div style="flex:2"><label class="form-label">Full Name</label><input type="text" name="name" id="cust_name" class="form-control" placeholder="Customer full name" required></div>
-          <div style="flex:1">
-            <label class="form-label">Mobile (with country code)</label>
-            <div class="mobile-input-row" style="display:flex;gap:6px">
-              <select id="cust_country_code" class="form-control" style="flex:0 0 90px;font-size:13px">
-                <option value="966" selected>🇸🇦 +966</option>
-                <option value="880">🇧🇩 +880</option>
-                <option value="91">🇮🇳 +91</option>
-                <option value="92">🇵🇰 +92</option>
-                <option value="977">🇳🇵 +977</option>
-                <option value="63">🇵🇭 +63</option>
-                <option value="20">🇪🇬 +20</option>
-                <option value="">Other</option>
-              </select>
-              <input type="text" name="mobile" id="cust_mobile" class="form-control" placeholder="5xxxxxxxx (no leading 0)" required>
+        
+        <div style="margin-bottom:14px">
+          <label class="form-label"><i class="fas fa-user" style="color:var(--accent);margin-right:4px"></i> Full Name</label>
+          <input type="text" name="name" id="cust_name" class="form-control" placeholder="Customer full name" required style="font-size:14px;padding:9px 12px">
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <label class="form-label" style="margin-bottom:0"><i class="fab fa-whatsapp" style="color:#25D366;margin-right:4px"></i> Mobile / WhatsApp Number</label>
+            <span style="font-size:11px;color:var(--text-muted);font-weight:500">Saudi or International</span>
+          </div>
+          <div class="mobile-input-row" style="display:flex;gap:8px;align-items:stretch">
+            <select id="cust_country_code" class="form-control" style="flex:0 0 125px;font-size:13px;font-weight:600;padding:9px 8px;cursor:pointer">
+              <option value="966" selected>🇸🇦 +966</option>
+              <option value="880">🇧🇩 +880</option>
+              <option value="91">🇮🇳 +91</option>
+              <option value="92">🇵🇰 +92</option>
+              <option value="977">🇳🇵 +977</option>
+              <option value="63">🇵🇭 +63</option>
+              <option value="20">🇪🇬 +20</option>
+              <option value="">🌐 Other</option>
+            </select>
+            <div style="flex:1;position:relative">
+              <input type="tel" name="mobile" id="cust_mobile" class="form-control" placeholder="5X XXX XXXX (or 05XXXXXXXX)" required style="font-size:15px;font-weight:600;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;padding:9px 14px;height:42px;width:100%">
             </div>
           </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:5px;line-height:1.4"><i class="fas fa-info-circle"></i> Type 9 digits (e.g. <strong>591495334</strong>) or 10 digits with 0 (e.g. <strong>0591495334</strong>). Country code will be formatted automatically.</div>
         </div>
-        <div class="input-group" style="margin-bottom:12px">
-          <div style="flex:1"><label class="form-label">Building</label><input type="text" name="building" id="cust_building" class="form-control" placeholder="Building name"></div>
-          <div style="flex:1"><label class="form-label">Apartment</label><input type="text" name="apartment" id="cust_apartment" class="form-control" placeholder="Apt #"></div>
-          <div style="flex:1"><label class="form-label">Room</label><input type="text" name="room" id="cust_room" class="form-control" placeholder="Room #"></div>
+
+        <div class="input-group" style="margin-bottom:14px">
+          <div style="flex:1"><label class="form-label"><i class="fas fa-building" style="color:var(--text-muted);margin-right:3px"></i> Building</label><input type="text" name="building" id="cust_building" class="form-control" placeholder="Building name/No"></div>
+          <div style="flex:1"><label class="form-label"><i class="fas fa-door-closed" style="color:var(--text-muted);margin-right:3px"></i> Apartment</label><input type="text" name="apartment" id="cust_apartment" class="form-control" placeholder="Apt #"></div>
+          <div style="flex:1"><label class="form-label"><i class="fas fa-bed" style="color:var(--text-muted);margin-right:3px"></i> Room</label><input type="text" name="room" id="cust_room" class="form-control" placeholder="Room #"></div>
         </div>
-        <div class="input-group" style="margin-bottom:12px">
-          <div style="flex:1"><label class="form-label">Billing Day (1-31)</label><input type="number" name="billing_day" id="cust_billing_day" class="form-control" min="1" max="31" placeholder="e.g. 25" required></div>
-          <div style="flex:1"><label class="form-label">Monthly Fee (SAR)</label><input type="number" name="monthly_fee" id="cust_fee" class="form-control" min="1" step="0.5" value="30" required></div>
-          <div style="flex:1"><label class="form-label">Pay By Day (1-31)</label><input type="number" name="pay_by_day" id="cust_pay_by_day" class="form-control" min="1" max="31" value="10" required></div>
+
+        <div class="input-group" style="margin-bottom:14px">
+          <div style="flex:1"><label class="form-label"><i class="fas fa-calendar-day" style="color:var(--accent);margin-right:3px"></i> Billing Day</label><input type="number" name="billing_day" id="cust_billing_day" class="form-control" min="1" max="31" placeholder="e.g. 25" required></div>
+          <div style="flex:1"><label class="form-label"><i class="fas fa-money-bill-wave" style="color:var(--success);margin-right:3px"></i> Monthly Fee (SAR)</label><input type="number" name="monthly_fee" id="cust_fee" class="form-control" min="1" step="0.5" value="30" required></div>
+          <div style="flex:1"><label class="form-label"><i class="fas fa-clock" style="color:var(--warning);margin-right:3px"></i> Pay By Day</label><input type="number" name="pay_by_day" id="cust_pay_by_day" class="form-control" min="1" max="31" value="10" required></div>
         </div>
-        <div style="margin-bottom:16px">
-          <label class="form-label">Date Connection Started <small style="font-weight:400;text-transform:none">(actual date, e.g. 2025-04-25)</small></label>
-          <input type="date" name="billing_start_date" id="cust_start" class="form-control" required>
+
+        <div style="margin-bottom:18px">
+          <label class="form-label"><i class="fas fa-plug" style="color:var(--info);margin-right:3px"></i> Date Connection Started <small style="font-weight:400;text-transform:none;color:var(--text-muted)">(actual installation date, e.g. 2025-04-25)</small></label>
+          <input type="date" name="billing_start_date" id="cust_start" class="form-control" required style="font-size:13px;padding:8px 12px">
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> If joined after billing day, first bill automatically starts the following month.</div>
         </div>
-        <button type="submit" class="btn btn-success" onclick="return combineMobile()"><i class="fas fa-save"></i> Save Customer</button>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('custModal')">Cancel</button>
+          <button type="submit" class="btn btn-success" onclick="return combineMobile()"><i class="fas fa-save"></i> Save Customer</button>
+        </div>
       </form>
       <script>
       function combineMobile() {
-        var cc = document.getElementById("cust_country_code").value;
+        var cc = document.getElementById("cust_country_code") ? document.getElementById("cust_country_code").value : '';
         var mob = document.getElementById("cust_mobile");
-        var num = mob.value.trim().replace(/^0+/, "").replace(/[^0-9]/g, "");
-        if (cc && num && !num.startsWith(cc)) {
-          mob.value = cc + num;
+        if (!mob) return true;
+        var raw = mob.value.trim().replace(/\s+/g, '').replace(/[-+()]/g, '');
+        if (!raw) return true;
+        if (cc === '966') {
+          if (raw.startsWith('966')) raw = raw.slice(3);
+          if (raw.startsWith('0')) raw = raw.slice(1);
+          mob.value = '966' + raw;
+        } else if (cc) {
+          if (raw.startsWith(cc)) raw = raw.slice(cc.length);
+          if (raw.startsWith('0')) raw = raw.slice(1);
+          mob.value = cc + raw;
         } else {
-          mob.value = num;
+          mob.value = raw;
         }
         return true;
       }
@@ -2087,12 +2112,218 @@ function openModal(id){document.getElementById(id).classList.add('show')}
 function closeModal(id){document.getElementById(id).classList.remove('show')}
 document.addEventListener('click',function(e){if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('show');});
 setTimeout(()=>{const a=document.getElementById('top-alert');if(a)a.remove()},5000);
-function clearCustForm(){['cust_id','cust_name','cust_mobile','cust_building','cust_apartment','cust_room','cust_start'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});const bd=document.getElementById('cust_billing_day');if(bd)bd.value='';const fee=document.getElementById('cust_fee');if(fee)fee.value='30';const t=document.getElementById('custModalTitle');if(t)t.textContent='Add Customer';}
-function editCust(id,name,mobile,building,apartment,room,day,start,fee){document.getElementById('cust_id').value=id;document.getElementById('cust_name').value=name;document.getElementById('cust_mobile').value=mobile;document.getElementById('cust_building').value=building;document.getElementById('cust_apartment').value=apartment;document.getElementById('cust_room').value=room;document.getElementById('cust_billing_day').value=day;document.getElementById('cust_start').value=start;document.getElementById('cust_fee').value=fee;document.getElementById('custModalTitle').textContent='Edit Customer';openModal('custModal');}
+function clearCustForm(){
+  ['cust_id','cust_name','cust_mobile','cust_building','cust_apartment','cust_room','cust_start'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  const cc=document.getElementById('cust_country_code');if(cc)cc.value='966';
+  const bd=document.getElementById('cust_billing_day');if(bd)bd.value='';
+  const fee=document.getElementById('cust_fee');if(fee)fee.value='30';
+  const pb=document.getElementById('cust_pay_by_day');if(pb)pb.value='10';
+  const t=document.getElementById('custModalTitle');if(t)t.textContent='Add Customer';
+}
+
+function editCust(id,name,mobile,building,apartment,room,day,start,fee,payBy){
+  document.getElementById('cust_id').value=id;
+  document.getElementById('cust_name').value=name;
+  document.getElementById('cust_building').value=building||'';
+  document.getElementById('cust_apartment').value=apartment||'';
+  document.getElementById('cust_room').value=room||'';
+  document.getElementById('cust_billing_day').value=day;
+  document.getElementById('cust_start').value=start||'';
+  document.getElementById('cust_fee').value=fee||'30';
+  const pb=document.getElementById('cust_pay_by_day');
+  if(pb) pb.value=payBy||'10';
+
+  const ccSelect=document.getElementById('cust_country_code');
+  const mobInput=document.getElementById('cust_mobile');
+  let mobStr=String(mobile||'').trim();
+
+  if(mobStr.startsWith('966')){
+    if(ccSelect) ccSelect.value='966';
+    if(mobInput) mobInput.value='0'+mobStr.slice(3);
+  } else if(mobStr.startsWith('880')){
+    if(ccSelect) ccSelect.value='880';
+    if(mobInput) mobInput.value=mobStr.slice(3);
+  } else if(mobStr.startsWith('91')&&mobStr.length>10){
+    if(ccSelect) ccSelect.value='91';
+    if(mobInput) mobInput.value=mobStr.slice(2);
+  } else if(mobStr.startsWith('92')&&mobStr.length>10){
+    if(ccSelect) ccSelect.value='92';
+    if(mobInput) mobInput.value=mobStr.slice(2);
+  } else if(mobStr.startsWith('05')){
+    if(ccSelect) ccSelect.value='966';
+    if(mobInput) mobInput.value=mobStr;
+  } else {
+    if(ccSelect) ccSelect.value='';
+    if(mobInput) mobInput.value=mobStr;
+  }
+
+  document.getElementById('custModalTitle').textContent='Edit Customer';
+  openModal('custModal');
+}
+
 const custSearch=document.getElementById('custSearch');
-if(custSearch){custSearch.addEventListener('input',function(){const q=this.value.toLowerCase();document.querySelectorAll('#custTbody tr').forEach(row=>{const n=(row.dataset.n||'').toLowerCase();const m=(row.dataset.m||'').toLowerCase();const b=(row.dataset.b||'').toLowerCase();const r=(row.dataset.r||'').toLowerCase();row.style.display=(n+m+b+r).includes(q)?'':'none';});});}
+const custSearchClear=document.getElementById('custSearchClear');
+if(custSearch){
+  const custRows=document.querySelectorAll('#custTbody tr');
+  const countBadge=document.getElementById('custCountBadge');
+  const totalCount=custRows.length;
+
+  function doCustFilter(){
+    const raw=custSearch.value.trim().toLowerCase();
+    if(custSearchClear) custSearchClear.style.display=raw?'block':'none';
+
+    if(!raw){
+      custRows.forEach(r=>r.style.display='');
+      if(countBadge){countBadge.textContent=totalCount+' active';countBadge.className='badge badge-blue';}
+      const noRow=document.getElementById('custNoMatchRow');
+      if(noRow) noRow.style.display='none';
+      return;
+    }
+
+    const tokens=raw.split(/\s+/).filter(Boolean);
+    let visibleCount=0;
+
+    custRows.forEach(row=>{
+      const n=(row.dataset.n||'').toLowerCase();
+      const m=(row.dataset.m||'').toLowerCase();
+      const b=(row.dataset.b||'').toLowerCase();
+      const apt=(row.dataset.apt||'').toLowerCase();
+      const r=(row.dataset.r||'').toLowerCase();
+
+      let mLocal=m, mIntl=m, mShort=m;
+      if(m.startsWith('966')){
+        mLocal='0'+m.slice(3);
+        mShort=m.slice(3);
+      } else if(m.startsWith('0')){
+        mIntl='966'+m.slice(1);
+        mShort=m.slice(1);
+      }
+
+      const searchBlob=`${n} ${m} ${mLocal} ${mIntl} ${mShort} ${b} ${apt} ${r}`;
+
+      const matches=tokens.every(tok=>{
+        const dig=tok.replace(/\D/g,'');
+        if(dig.length>=2&&(m.includes(dig)||mLocal.includes(dig)||mIntl.includes(dig)||mShort.includes(dig))){
+          return true;
+        }
+        return searchBlob.includes(tok);
+      });
+
+      if(matches){row.style.display='';visibleCount++;}
+      else{row.style.display='none';}
+    });
+
+    if(countBadge){
+      countBadge.textContent=`${visibleCount} of ${totalCount} matching`;
+      countBadge.className=visibleCount>0?'badge badge-green':'badge badge-yellow';
+    }
+
+    let noRow=document.getElementById('custNoMatchRow');
+    if(visibleCount===0){
+      if(!noRow){
+        const tbody=document.getElementById('custTbody');
+        noRow=document.createElement('tr');
+        noRow.id='custNoMatchRow';
+        noRow.innerHTML=`<td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-search" style="font-size:22px;opacity:0.4;display:block;margin-bottom:8px"></i>No customers matching "<strong>${raw}</strong>"</td>`;
+        tbody.appendChild(noRow);
+      } else {
+        noRow.style.display='';
+        noRow.querySelector('strong').textContent=raw;
+      }
+    } else if(noRow){
+      noRow.style.display='none';
+    }
+  }
+
+  custSearch.addEventListener('input',doCustFilter);
+  if(custSearchClear){
+    custSearchClear.addEventListener('click',function(){
+      custSearch.value='';
+      doCustFilter();
+      custSearch.focus();
+    });
+  }
+}
+
 const collSearch=document.getElementById('collSearch');
-if(collSearch){let debounce;collSearch.addEventListener('input',function(){clearTimeout(debounce);const q=this.value.trim();const res=document.getElementById('collResults');if(q.length<2){res.style.display='none';return;}debounce=setTimeout(()=>{fetch('search_customers.php?q='+encodeURIComponent(q)).then(r=>r.json()).then(data=>{if(!data.length){res.innerHTML='<div style="padding:12px;text-align:center;color:var(--text-muted)">No results</div>';res.style.display='block';return;}res.innerHTML=data.map(c=>`<div class="search-result-item"><div><strong>${c.name}</strong><br><span style="font-size:11px;color:var(--text-muted)">${c.mobile} · ${c.building} R${c.room}</span></div><div style="display:flex;gap:6px"><button class="btn btn-primary btn-xs" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill'></i> Collect</button><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}',${c.id})"><i class='fab fa-whatsapp'></i></button></div></div>`).join('');res.style.display='block';});},300);});document.addEventListener('click',e=>{if(!collSearch.contains(e.target))document.getElementById('collResults').style.display='none';});}
+if(collSearch){
+  let debounce;
+  let abortCtrl=null;
+
+  collSearch.addEventListener('input',function(){
+    clearTimeout(debounce);
+    const q=this.value.trim();
+    const res=document.getElementById('collResults');
+    if(!res) return;
+
+    if(q.length<2){
+      res.style.display='none';
+      res.innerHTML='';
+      if(abortCtrl) abortCtrl.abort();
+      return;
+    }
+
+    res.innerHTML='<div style="padding:12px 14px;color:var(--text-muted);font-size:12px"><i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Searching customer…</div>';
+    res.style.display='block';
+
+    debounce=setTimeout(()=>{
+      if(abortCtrl) abortCtrl.abort();
+      abortCtrl=new AbortController();
+
+      fetch('search_customers.php?q='+encodeURIComponent(q),{signal:abortCtrl.signal})
+        .then(r=>r.json())
+        .then(data=>{
+          if(!data||!data.length){
+            res.innerHTML='<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:13px"><i class="fas fa-search" style="opacity:0.5;margin-right:6px"></i>No active customers matching "<strong>'+q.replace(/</g,'&lt;')+'</strong>"</div>';
+            res.style.display='block';
+            return;
+          }
+          res.innerHTML=data.map(c=>`
+            <div class="search-result-item" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0;padding-right:12px">
+                <div style="font-weight:600;font-size:14px;color:var(--text);display:flex;align-items:center;gap:6px">
+                  <span>${c.name}</span>
+                  <span class="badge badge-blue" style="font-size:10px">Day ${c.billing_day||'—'}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                  <span class="mono" style="color:var(--accent)"><i class="fas fa-phone-alt" style="font-size:10px;margin-right:3px"></i>${c.mobile}</span>
+                  <span>·</span>
+                  <span><i class="fas fa-map-marker-alt" style="font-size:10px;margin-right:3px"></i>${(c.building||'')+' '+(c.apartment||'')+' '+(c.room?'R'+c.room:'')}</span>
+                  <span>·</span>
+                  <span class="mono" style="color:var(--success)">${c.monthly_fee||30} SAR</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:6px;flex-shrink:0">
+                <button class="btn btn-primary btn-sm" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill-wave'></i> Collect</button>
+                <button class="btn btn-whatsapp btn-sm" title="Send WhatsApp Reminder" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}',${c.id})"><i class='fab fa-whatsapp'></i></button>
+              </div>
+            </div>
+          `).join('');
+          res.style.display='block';
+        })
+        .catch(err=>{
+          if(err.name==='AbortError') return;
+          res.innerHTML='<div style="padding:12px;text-align:center;color:var(--danger)">Error fetching results</div>';
+        });
+    },180);
+  });
+
+  document.addEventListener('click',e=>{
+    const res=document.getElementById('collResults');
+    if(res&&!collSearch.contains(e.target)&&!res.contains(e.target)){
+      res.style.display='none';
+    }
+  });
+
+  collSearch.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      const res=document.getElementById('collResults');
+      if(res) res.style.display='none';
+    }
+  });
+}
 function openPromiseModal(cid,name,pid){
   document.getElementById('promise_cid').value=cid;
   document.getElementById('promise_pid').value=pid;
@@ -2275,6 +2506,8 @@ function filterPendingTable() {
   const q = (document.getElementById('pendingFilterInput')?.value || '').toLowerCase().trim();
   const rows = document.querySelectorAll('#pendingTable tbody tr');
   let visibleCount = 0;
+  const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+
   rows.forEach(r => {
     const text = r.textContent.toLowerCase();
     const hasPromise = r.getAttribute('data-has-promise') === '1';
@@ -2284,7 +2517,20 @@ function filterPendingTable() {
     if (activePendingFilter === 'promise') passFilter = hasPromise;
     else if (activePendingFilter === 'multi') passFilter = (unpaidCount > 1);
 
-    const passQuery = !q || text.includes(q);
+    let passQuery = true;
+    if (tokens.length > 0) {
+      passQuery = tokens.every(tok => {
+        if (text.includes(tok)) return true;
+        const dig = tok.replace(/\D/g, '');
+        if (dig.length >= 2) {
+          if (dig.startsWith('05') && text.includes('966' + dig.slice(1))) return true;
+          if (dig.startsWith('9665') && text.includes('0' + dig.slice(3))) return true;
+          if (dig.startsWith('5') && (text.includes('0' + dig) || text.includes('966' + dig))) return true;
+        }
+        return false;
+      });
+    }
+
     if (passFilter && passQuery) {
       r.style.display = '';
       visibleCount++;
@@ -2321,23 +2567,66 @@ function resetPass(id){document.getElementById('reset_uid').value=id;openModal('
 </script>
 <script>
 (function(){
-var inp=document.getElementById("advCustSearch");if(!inp)return;
-var sug=document.getElementById("advCustSug"),hid=document.getElementById("advCustId");
-inp.addEventListener("input",function(){
-  var q=this.value.trim();hid.value="";
-  if(q.length<1){sug.style.display="none";return;}
-  fetch("search_customers.php?q="+encodeURIComponent(q)).then(r=>r.json()).then(d=>{
-    if(!d.length){sug.innerHTML="<div style='padding:10px;font-size:12px;color:var(--text-muted)'>No match</div>";sug.style.display="block";return;}
-    sug.innerHTML=d.map(x=>"<div class='adv-sug-item' data-id='"+x.id+"' style='padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)'><strong>"+x.name+"</strong> <span style='color:var(--text-muted);font-size:11px'>"+x.mobile+"</span></div>").join("");
-    sug.style.display="block";
-    sug.querySelectorAll(".adv-sug-item").forEach(el=>{
-      el.onclick=function(){hid.value=this.dataset.id;inp.value=this.querySelector("strong").textContent;sug.style.display="none";};
-      el.onmouseover=function(){this.style.background="rgba(59,130,246,.1)";};
-      el.onmouseout=function(){this.style.background="";};
-    });
+  var inp = document.getElementById("advCustSearch");
+  if(!inp) return;
+  var sug = document.getElementById("advCustSug"), hid = document.getElementById("advCustId");
+  var debounceTimer, activeController;
+
+  inp.addEventListener("input", function() {
+    clearTimeout(debounceTimer);
+    var q = this.value.trim();
+    hid.value = "";
+    if (q.length < 2) {
+      sug.style.display = "none";
+      sug.innerHTML = "";
+      if (activeController) activeController.abort();
+      return;
+    }
+    sug.innerHTML = "<div style='padding:10px 14px;font-size:12px;color:var(--text-muted)'><i class='fas fa-spinner fa-spin' style='margin-right:6px'></i>Searching…</div>";
+    sug.style.display = "block";
+
+    debounceTimer = setTimeout(function() {
+      if (activeController) activeController.abort();
+      activeController = new AbortController();
+
+      fetch("search_customers.php?q=" + encodeURIComponent(q), { signal: activeController.signal })
+        .then(r => r.json())
+        .then(d => {
+          if (!d.length) {
+            sug.innerHTML = "<div style='padding:10px 14px;font-size:12px;color:var(--text-muted)'>No active customer match</div>";
+            sug.style.display = "block";
+            return;
+          }
+          sug.innerHTML = d.map(x => `
+            <div class='adv-sug-item' data-id='${x.id}' data-name='${x.name.replace(/'/g,"&#39;")}' style='padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center'>
+              <div>
+                <strong>${x.name}</strong>
+                <div style='font-size:11px;color:var(--text-muted);margin-top:2px'>${x.mobile} · ${(x.building || '') + ' ' + (x.room ? 'R' + x.room : '')}</div>
+              </div>
+              <span class='badge badge-blue' style='font-size:10px'>Day ${x.billing_day || '—'}</span>
+            </div>
+          `).join("");
+          sug.style.display = "block";
+
+          sug.querySelectorAll(".adv-sug-item").forEach(el => {
+            el.onclick = function() {
+              hid.value = this.dataset.id;
+              inp.value = this.dataset.name;
+              sug.style.display = "none";
+            };
+            el.onmouseover = function() { this.style.background = "var(--surface2)"; };
+            el.onmouseout = function() { this.style.background = ""; };
+          });
+        })
+        .catch(err => {
+          if (err.name === 'AbortError') return;
+        });
+    }, 180);
   });
-});
-document.addEventListener("click",function(e){if(!sug.contains(e.target)&&e.target!==inp)sug.style.display="none";});
+
+  document.addEventListener("click", function(e) {
+    if (sug && !sug.contains(e.target) && e.target !== inp) sug.style.display = "none";
+  });
 })();
 </script>
 <script>
@@ -2351,25 +2640,69 @@ function filterBalance(query) {
     row.style.display = text.includes(query) ? "" : "none";
   });
 }
-</script><script>
+</script>
+<script>
 (function(){
-var inp=document.getElementById("holdCustSearch");if(!inp)return;
-var sug=document.getElementById("holdCustSug"),hid=document.getElementById("holdCustId");
-inp.addEventListener("input",function(){
-  var q=this.value.trim();hid.value="";
-  if(q.length<1){sug.style.display="none";return;}
-  fetch("search_customers.php?q="+encodeURIComponent(q)).then(r=>r.json()).then(d=>{
-    if(!d.length){sug.innerHTML="<div style='padding:10px;font-size:12px;color:#a0a0c0'>No match</div>";sug.style.display="block";return;}
-    sug.innerHTML=d.map(x=>"<div class='hold-sug-item' data-id='"+x.id+"' style='padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #2d2d44;color:#eef2ff'><strong>"+x.name+"</strong> <span style='color:#a0a0c0;font-size:11px'>"+x.mobile+"</span></div>").join("");
-    sug.style.display="block";
-    sug.querySelectorAll(".hold-sug-item").forEach(el=>{
-      el.onclick=function(){hid.value=this.dataset.id;inp.value=this.querySelector("strong").textContent;sug.style.display="none";};
-      el.onmouseover=function(){this.style.background="rgba(59,130,246,.15)";};
-      el.onmouseout=function(){this.style.background="";};
-    });
+  var inp = document.getElementById("holdCustSearch");
+  if(!inp) return;
+  var sug = document.getElementById("holdCustSug"), hid = document.getElementById("holdCustId");
+  var debounceTimer, activeController;
+
+  inp.addEventListener("input", function() {
+    clearTimeout(debounceTimer);
+    var q = this.value.trim();
+    hid.value = "";
+    if (q.length < 2) {
+      sug.style.display = "none";
+      sug.innerHTML = "";
+      if (activeController) activeController.abort();
+      return;
+    }
+    sug.innerHTML = "<div style='padding:10px 14px;font-size:12px;color:var(--text-muted)'><i class='fas fa-spinner fa-spin' style='margin-right:6px'></i>Searching…</div>";
+    sug.style.display = "block";
+
+    debounceTimer = setTimeout(function() {
+      if (activeController) activeController.abort();
+      activeController = new AbortController();
+
+      fetch("search_customers.php?q=" + encodeURIComponent(q), { signal: activeController.signal })
+        .then(r => r.json())
+        .then(d => {
+          if (!d.length) {
+            sug.innerHTML = "<div style='padding:10px 14px;font-size:12px;color:var(--text-muted)'>No active customer match</div>";
+            sug.style.display = "block";
+            return;
+          }
+          sug.innerHTML = d.map(x => `
+            <div class='hold-sug-item' data-id='${x.id}' data-name='${x.name.replace(/'/g,"&#39;")}' style='padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center'>
+              <div>
+                <strong>${x.name}</strong>
+                <div style='font-size:11px;color:var(--text-muted);margin-top:2px'>${x.mobile} · ${(x.building || '') + ' ' + (x.room ? 'R' + x.room : '')}</div>
+              </div>
+              <span class='badge badge-blue' style='font-size:10px'>Day ${x.billing_day || '—'}</span>
+            </div>
+          `).join("");
+          sug.style.display = "block";
+
+          sug.querySelectorAll(".hold-sug-item").forEach(el => {
+            el.onclick = function() {
+              hid.value = this.dataset.id;
+              inp.value = this.dataset.name;
+              sug.style.display = "none";
+            };
+            el.onmouseover = function() { this.style.background = "var(--surface2)"; };
+            el.onmouseout = function() { this.style.background = ""; };
+          });
+        })
+        .catch(err => {
+          if (err.name === 'AbortError') return;
+        });
+    }, 180);
   });
-});
-document.addEventListener("click",function(e){if(sug&&!sug.contains(e.target)&&e.target!==inp)sug.style.display="none";});
+
+  document.addEventListener("click", function(e) {
+    if (sug && !sug.contains(e.target) && e.target !== inp) sug.style.display = "none";
+  });
 })();
 </script>
 </body>
