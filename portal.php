@@ -538,22 +538,30 @@ if (isLoggedIn() && isMaster() && isset($_GET['delete_collection'])) {
 // FILE MANAGEMENT
 // ============================================================
 if (isLoggedIn() && $action === 'upload_chunk') {
+    @set_time_limit(0);
+    @ini_set('max_execution_time', '0');
+    @ignore_user_abort(true);
     header('Content-Type: application/json');
-    if (!isset($_FILES['file'])) {
-        echo json_encode(['success' => false, 'error' => 'No file chunk received']);
+
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        $err = $_FILES['file']['error'] ?? 'none';
+        echo json_encode(['success' => false, 'error' => 'No valid chunk received (error code: ' . $err . ')']);
         exit;
     }
 
-    $chunk = intval($_POST['chunk'] ?? 0);
+    $chunk        = intval($_POST['chunk'] ?? 0);
     $total_chunks = intval($_POST['total_chunks'] ?? 1);
-    $session_id = preg_replace('/[^a-zA-Z0-9_-]/', '', $_POST['session_id'] ?? '');
-    $original_name = trim($_POST['original_name'] ?? $_FILES['file']['name'] ?? 'movie.mp4');
-    $title = trim($_POST['title'] ?? '');
-    $description = trim($_POST['description'] ?? '');
+    $chunk_size   = intval($_POST['chunk_size'] ?? 8388608);
+    if ($chunk_size <= 0) $chunk_size = 8388608;
 
+    $session_id   = preg_replace('/[^a-zA-Z0-9_-]/', '', $_POST['session_id'] ?? '');
     if (!$session_id) {
         $session_id = 'up_' . time() . '_' . rand(1000, 9999);
     }
+
+    $original_name = trim($_POST['original_name'] ?? $_FILES['file']['name'] ?? 'movie.mp4');
+    $title         = trim($_POST['title'] ?? '');
+    $description   = trim($_POST['description'] ?? '');
 
     $temp_dir = '/mnt/bigstorage/tmp_chunks/' . $session_id;
     if (!is_dir($temp_dir)) {
@@ -561,36 +569,88 @@ if (isLoggedIn() && $action === 'upload_chunk') {
         @chmod($temp_dir, 0777);
     }
 
-    $chunk_file = $temp_dir . '/chunk_' . $chunk;
-    if (!move_uploaded_file($_FILES['file']['tmp_name'], $chunk_file)) {
-        echo json_encode(['success' => false, 'error' => 'Failed to save chunk ' . $chunk]);
+    // Auto-cleanup stale chunk sessions older than 24h on first chunk of an upload
+    if ($chunk === 0) {
+        $base_tmp = '/mnt/bigstorage/tmp_chunks';
+        if ($dh = @opendir($base_tmp)) {
+            $now = time();
+            while (($entry = readdir($dh)) !== false) {
+                if ($entry === '.' || $entry === '..') continue;
+                $entry_path = $base_tmp . '/' . $entry;
+                if (is_dir($entry_path) && ($now - filemtime($entry_path) > 86400)) {
+                    $files = @scandir($entry_path);
+                    if ($files) {
+                        foreach ($files as $f) {
+                            if ($f !== '.' && $f !== '..') @unlink($entry_path . '/' . $f);
+                        }
+                    }
+                    @rmdir($entry_path);
+                }
+            }
+            closedir($dh);
+        }
+    }
+
+    $part_file = $temp_dir . '/combined.part';
+
+    // Stream chunk directly into part_file at its exact byte offset
+    $out = fopen($part_file, 'c+b');
+    if (!$out) {
+        echo json_encode(['success' => false, 'error' => 'Cannot open storage part file on bigstorage']);
         exit;
     }
 
-    // If last chunk, reassemble final file
+    flock($out, LOCK_EX);
+    fseek($out, (int)($chunk * $chunk_size));
+    $in = fopen($_FILES['file']['tmp_name'], 'rb');
+    if ($in) {
+        stream_copy_to_stream($in, $out);
+        fclose($in);
+    }
+    fflush($out);
+    flock($out, LOCK_UN);
+    fclose($out);
+
+    // Save chunk receipt marker
+    touch($temp_dir . '/c_' . $chunk);
+
+    // If last chunk, finalize
     if ($chunk + 1 >= $total_chunks) {
+        // Verify all chunks 0 .. total_chunks - 1 are recorded
+        $missing = [];
+        for ($i = 0; $i < $total_chunks; $i++) {
+            if (!file_exists($temp_dir . '/c_' . $i)) {
+                $missing[] = $i;
+            }
+        }
+
+        if (!empty($missing)) {
+            echo json_encode([
+                'success' => false,
+                'error' => 'Missing ' . count($missing) . ' chunk(s), assembly incomplete.',
+                'missing_chunks' => array_slice($missing, 0, 10)
+            ]);
+            exit;
+        }
+
         $clean_orig = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($original_name));
         $final_filename = time() . '_' . $clean_orig;
         $final_path = '/mnt/bigstorage/files/' . $final_filename;
 
-        $out = fopen($final_path, 'wb');
-        if (!$out) {
-            echo json_encode(['success' => false, 'error' => 'Cannot create final destination file on storage']);
-            exit;
+        // Atomic rename (instantaneous inode pointer update on same filesystem)
+        if (!rename($part_file, $final_path)) {
+            if (!copy($part_file, $final_path)) {
+                echo json_encode(['success' => false, 'error' => 'Failed to move combined file to final destination']);
+                exit;
+            }
+            @unlink($part_file);
         }
 
+        // Clean up markers and session directory
         for ($i = 0; $i < $total_chunks; $i++) {
-            $part = $temp_dir . '/chunk_' . $i;
-            if (file_exists($part)) {
-                $in = fopen($part, 'rb');
-                while ($buff = fread($in, 1048576)) {
-                    fwrite($out, $buff);
-                }
-                fclose($in);
-                @unlink($part);
-            }
+            @unlink($temp_dir . '/c_' . $i);
         }
-        fclose($out);
+        @unlink($part_file);
         @rmdir($temp_dir);
 
         $file_size = file_exists($final_path) ? filesize($final_path) : 0;
@@ -600,8 +660,16 @@ if (isLoggedIn() && $action === 'upload_chunk') {
         $on_esc    = SQLite3::escapeString($original_name);
         $uid       = intval($_SESSION['user_id'] ?? 1);
 
+        $ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+        $mime_map = [
+            'mp4' => 'video/mp4', 'mkv' => 'video/x-matroska',
+            'avi' => 'video/x-msvideo', 'mov' => 'video/quicktime',
+            'webm' => 'video/webm', 'ts' => 'video/mp2t'
+        ];
+        $mime = $mime_map[$ext] ?? 'video/mp4';
+
         $db->exec("INSERT INTO files (title, description, filename, original_name, size, mime, uploaded_by, upload_date)
-            VALUES ('$title_esc', '$desc_esc', '$fn_esc', '$on_esc', $file_size, 'video/mp4', $uid, datetime('now'))");
+            VALUES ('$title_esc', '$desc_esc', '$fn_esc', '$on_esc', $file_size, '$mime', $uid, datetime('now'))");
         logAction($db, $uid, 'UPLOAD_MOVIE', "Uploaded movie: $title ($original_name)");
 
         echo json_encode([
@@ -2373,7 +2441,7 @@ async function handleMovieUpload(e) {
   const title = document.getElementById('movieTitle').value.trim();
   const desc = document.getElementById('movieDesc').value.trim();
 
-  const chunkSize = 8 * 1024 * 1024; // 8MB chunk
+  const chunkSize = 16 * 1024 * 1024; // 16MB chunk for high throughput
   const totalChunks = Math.ceil(file.size / chunkSize);
   const sessionId = 'up_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
 
@@ -2390,7 +2458,7 @@ async function handleMovieUpload(e) {
   movieUploadCancelled = false;
   bar.style.width = '0%';
   pctEl.textContent = '0%';
-  statEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading chunks (0/' + totalChunks + ')...';
+  statEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing upload (0/' + totalChunks + ')...';
 
   const startTime = Date.now();
   let uploadedBytes = 0;
@@ -2407,6 +2475,8 @@ async function handleMovieUpload(e) {
     fd.append('file', chunkBlob, file.name);
     fd.append('chunk', chunkIdx);
     fd.append('total_chunks', totalChunks);
+    fd.append('chunk_size', chunkSize);
+    fd.append('file_size', file.size);
     fd.append('session_id', sessionId);
     fd.append('title', title);
     fd.append('description', desc);
@@ -2420,12 +2490,22 @@ async function handleMovieUpload(e) {
     while (attempt < 3 && !success && !movieUploadCancelled) {
       attempt++;
       try {
+        if (chunkIdx + 1 === totalChunks) {
+          statEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Finalizing movie (${chunkIdx + 1}/${totalChunks})...`;
+        }
         const resp = await fetch('portal.php', {
           method: 'POST',
           body: fd,
           signal: movieUploadAbortController.signal
         });
-        const data = await resp.json();
+        const text = await resp.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error('HTTP ' + resp.status + ': ' + text.slice(0, 100));
+        }
+
         if (data.success) {
           success = true;
           uploadedBytes = end;
@@ -2445,7 +2525,9 @@ async function handleMovieUpload(e) {
           const etaMin = Math.floor(remainingSec / 60);
           const etaSec = remainingSec % 60;
           speedEl.textContent = `${mbPerSec} MB/s • ETA: ${etaMin}m ${etaSec}s`;
-          statEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Uploading chunk ${chunkIdx + 1} of ${totalChunks}...`;
+          if (chunkIdx + 1 < totalChunks) {
+            statEl.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Uploading chunk ${chunkIdx + 1} of ${totalChunks}...`;
+          }
 
           if (data.completed) {
             statEl.innerHTML = '<i class="fas fa-check-circle" style="color:var(--success)"></i> Upload Complete!';
