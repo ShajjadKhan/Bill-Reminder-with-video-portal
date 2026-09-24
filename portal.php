@@ -1782,16 +1782,60 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
 </div>
 
 <?php elseif ($page === 'balance'): ?>
+<?php
+$cust_rows = [];
+$grand_owed = 0;
+$grand_paid = 0;
+$owing_count = 0;
+$settled_count = 0;
+$credit_count = 0;
+
+$custs = $db->query("SELECT id, name, mobile, building, apartment, room FROM customers WHERE status='active'");
+while ($c = $custs->fetchArray(SQLITE3_ASSOC)) {
+    $bal = getCustomerBalance($db, $c["id"]);
+    $grand_owed += $bal["total_owed"];
+    $grand_paid += $bal["total_paid"];
+    if ($bal["balance"] < 0) {
+        $owing_count++;
+    } elseif ($bal["balance"] > 0) {
+        $credit_count++;
+    } else {
+        $settled_count++;
+    }
+    $c["bal"] = $bal;
+    $cust_rows[] = $c;
+}
+
+// Sort: Highest amount balance owing first (lowest/most negative balance), then alphabetically by name
+usort($cust_rows, function($a, $b) {
+    if ($a["bal"]["balance"] != $b["bal"]["balance"]) {
+        return ($a["bal"]["balance"] < $b["bal"]["balance"]) ? -1 : 1;
+    }
+    return strcasecmp($a["name"], $b["name"]);
+});
+?>
 <div class="card">
   <div class="card-header">
-    <div class="card-header-title"><i class="fas fa-scale-balanced"></i> Customer Balance Sheet</div>
-    <span class="badge badge-blue"><?php $all_custs = $db->query("SELECT COUNT(*) FROM customers WHERE status='active'"); echo $all_custs->fetchArray(SQLITE3_NUM)[0]; ?> active</span>
+    <div class="card-header-title">
+      <i class="fas fa-scale-balanced"></i> Customer Balance Sheet
+      <span style="font-size:12px;font-weight:normal;color:var(--text-muted);margin-left:8px">(Highest owing first)</span>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span class="badge badge-red"><?= $owing_count ?> owing</span>
+      <span class="badge badge-blue"><?= count($cust_rows) ?> active</span>
+    </div>
   </div>
-  <div style="padding:12px 0 8px 0">
-    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name or phone…" style="font-size:13px" onkeyup="filterBalance(this.value)">
+  <div style="padding:12px 14px 8px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name, phone, building, room…" style="flex:1;min-width:200px;font-size:13px" oninput="filterBalance(this.value)">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button type="button" class="filter-pill balance-filter-pill active" onclick="setBalanceFilter('all', this)">All (<?= count($cust_rows) ?>)</button>
+      <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('owing', this)">⚠️ Owing (<?= $owing_count ?>)</button>
+      <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('settled', this)">✓ Settled (<?= $settled_count ?>)</button>
+      <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('credit', this)">★ Credit (<?= $credit_count ?>)</button>
+    </div>
   </div>
   <div class="table-wrap" style="max-height:70vh;overflow-y:auto">
-    <table>
+    <table id="balanceTable">
       <thead><tr>
         <th>#</th>
         <th>Customer</th>
@@ -1800,36 +1844,45 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
         <th>Total Paid (SAR)</th>
         <th>Balance</th>
         <th>Status</th>
+        <th>Follow-up</th>
       </tr></thead>
       <tbody>
       <?php 
-      $custs = $db->query("SELECT id, name, mobile FROM customers WHERE status='active' ORDER BY name");
       $idx = 0;
-      $grand_owed = 0;
-      $grand_paid = 0;
-      while($c = $custs->fetchArray(SQLITE3_ASSOC)): 
-        $bal = getCustomerBalance($db, $c['id']);
-        $grand_owed += $bal['total_owed'];
-        $grand_paid += $bal['total_paid'];
+      foreach ($cust_rows as $c): 
+        $bal = $c["bal"];
         $idx++;
-        $status = $bal['balance'] > 0 ? 'CREDIT' : ($bal['balance'] == 0 ? 'SETTLED' : 'OWING');
-        $status_color = $bal['balance'] > 0 ? 'badge-green' : ($bal['balance'] == 0 ? 'badge-blue' : 'badge-red');
+        $status = $bal["balance"] > 0 ? 'CREDIT' : ($bal["balance"] == 0 ? 'SETTLED' : 'OWING');
+        $status_color = $bal["balance"] > 0 ? 'badge-green' : ($bal["balance"] == 0 ? 'badge-blue' : 'badge-red');
       ?>
-        <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : 'background:rgba(34,197,94,.04)' ?>">
+        <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : 'background:rgba(34,197,94,.04)' ?>" data-status="<?= strtolower($status) ?>">
           <td class="mono" style="color:var(--text-muted)"><?= $idx ?></td>
-          <td><strong><?= htmlspecialchars($c['name']) ?></strong><br><small style="color:var(--text-muted)"><?= $c['mobile'] ?></small></td>
-          <td class="mono"><?= $c['mobile'] ?></td>
-          <td class="mono"><strong><?= number_format($bal['total_owed'], 2) ?></strong></td>
-          <td class="mono"><strong style="color:var(--success)"><?= number_format($bal['total_paid'], 2) ?></strong></td>
-          <td class="mono"><strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal['balance'], 2) ?> SAR</strong></td>
+          <td>
+            <strong><?= htmlspecialchars($c["name"]) ?></strong>
+            <?php if (!empty($c["building"]) || !empty($c["room"])): ?>
+              <br><small style="color:var(--text-muted)"><?= htmlspecialchars(trim(($c["building"] ?? "") . " " . ($c["apartment"] ?? "") . " " . (!empty($c["room"]) ? "R" . $c["room"] : ""))) ?></small>
+            <?php endif; ?>
+          </td>
+          <td class="mono"><a href="tel:<?= $c["mobile"] ?>" style="color:inherit;text-decoration:none"><?= $c["mobile"] ?></a></td>
+          <td class="mono"><strong><?= number_format($bal["total_owed"], 2) ?></strong></td>
+          <td class="mono"><strong style="color:var(--success)"><?= number_format($bal["total_paid"], 2) ?></strong></td>
+          <td class="mono"><strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal["balance"], 2) ?> SAR</strong></td>
           <td><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
+          <td>
+            <?php if ($bal["balance"] < 0): ?>
+              <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
+            <?php else: ?>
+              <span style="color:var(--text-muted);font-size:12px">—</span>
+            <?php endif; ?>
+          </td>
         </tr>
-      <?php endwhile; ?>
+      <?php endforeach; ?>
       <tr class="table-total">
         <td colspan="3"><strong>TOTAL</strong></td>
         <td class="mono"><strong><?= number_format($grand_owed, 2) ?></strong></td>
         <td class="mono"><strong style="color:var(--success)"><?= number_format($grand_paid, 2) ?></strong></td>
         <td class="mono"><strong style="<?= ($grand_paid - $grand_owed) > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($grand_paid - $grand_owed, 2) ?> SAR</strong></td>
+        <td></td>
         <td></td>
       </tr>
       </tbody>
@@ -1837,11 +1890,12 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
   </div>
   <div class="card-footer" style="background:rgba(0,0,0,.02);padding:12px;font-size:12px;color:var(--text-muted)">
     <strong>Legend:</strong> 
-    <span style="margin-right:20px"><span class="badge badge-green" style="font-size:10px">CREDIT</span> = Overpaid (has prepaid months)</span>
+    <span style="margin-right:20px"><span class="badge badge-red" style="font-size:10px">OWING</span> = Unpaid balance remains (highest debt at top)</span>
     <span style="margin-right:20px"><span class="badge badge-blue" style="font-size:10px">SETTLED</span> = Current balance is zero</span>
-    <span><span class="badge badge-red" style="font-size:10px">OWING</span> = Unpaid balance remains</span>
+    <span><span class="badge badge-green" style="font-size:10px">CREDIT</span> = Overpaid (has prepaid months)</span>
   </div>
 </div>
+
 
 <?php elseif ($page === 'files'): ?>
 <div class="card">
@@ -2712,14 +2766,37 @@ function resetPass(id){document.getElementById('reset_uid').value=id;openModal('
 })();
 </script>
 <script>
+let activeBalanceFilter = 'all';
+
+function setBalanceFilter(type, btn) {
+  activeBalanceFilter = type;
+  document.querySelectorAll('.balance-filter-pill').forEach(el => el.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  filterBalance();
+}
+
 function filterBalance(query) {
-  query = query.toLowerCase();
-  var tbody = document.querySelector("table tbody");
-  if (!tbody) return;
-  var rows = tbody.querySelectorAll("tr");
-  rows.forEach(function(row) {
-    var text = row.textContent.toLowerCase();
-    row.style.display = text.includes(query) ? "" : "none";
+  const q = (query !== undefined ? query : (document.getElementById('balanceSearch')?.value || '')).toLowerCase().trim();
+  const table = document.getElementById('balanceTable') || document.querySelector('table');
+  if (!table) return;
+  const rows = table.querySelectorAll('tbody tr:not(.table-total)');
+  const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+
+  rows.forEach(r => {
+    const text = r.textContent.toLowerCase();
+    const status = r.getAttribute('data-status') || '';
+
+    let passFilter = true;
+    if (activeBalanceFilter === 'owing') passFilter = (status === 'owing');
+    else if (activeBalanceFilter === 'settled') passFilter = (status === 'settled');
+    else if (activeBalanceFilter === 'credit') passFilter = (status === 'credit');
+
+    let passQuery = true;
+    if (tokens.length > 0) {
+      passQuery = tokens.every(tok => text.includes(tok));
+    }
+
+    r.style.display = (passFilter && passQuery) ? '' : 'none';
   });
 }
 </script>
