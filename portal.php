@@ -769,7 +769,7 @@ if ($page === 'report') {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
 <title>CyberNet ISP Billing</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -940,6 +940,67 @@ tbody td{padding:10px 12px;vertical-align:middle}
 /* RESPONSIVE LAYOUT & PHONE USABILITY                          */
 /* ============================================================ */
 
+/* Global Touch & Tap Optimization */
+a, button, input, select, textarea, .filter-pill, .btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Floating Scroll-to-Top Button */
+.btn-scroll-top {
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  right: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+  transform: translateY(10px);
+}
+.btn-scroll-top.visible {
+  opacity: 0.92;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.btn-scroll-top:active {
+  transform: scale(0.95);
+}
+
+/* Desktop Defaults for Responsive Card Classes */
+.bal-metric-label { display: none; }
+.bal-rank-pill { display: none; }
+.bal-mobile-status { display: none; }
+.bal-btn-call { display: none; }
+.vac-card-actions { display: inline-flex; gap: 4px; align-items: center; }
+.report-card-actions { display: inline-flex; gap: 4px; align-items: center; }
+.vac-metric-label, .report-metric-label { display: none; }
+
+/* Filter Pill Bar */
+.bal-filter-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 14px 8px 14px;
+}
+.bal-pills-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* Topbar Tablet & Mobile Wrapping */
 @media(max-width: 860px) {
   .topbar {
@@ -961,12 +1022,22 @@ tbody td{padding:10px 12px;vertical-align:middle}
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     gap: 5px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .nav-tabs-wrap::-webkit-scrollbar {
+    display: none;
   }
   .nav-tabs-wrap a {
-    padding: 7px 12px;
-    font-size: 12px;
-    min-height: 36px;
+    padding: 8px 13px;
+    font-size: 13px;
+    min-height: 38px;
     flex-shrink: 0;
+  }
+  .nav-tabs-wrap a.active {
+    background: var(--accent) !important;
+    color: #fff !important;
+    font-weight: 600;
   }
   .user-badge span:first-of-type { display: none; }
   .user-badge .role { display: inline-block; }
@@ -974,20 +1045,25 @@ tbody td{padding:10px 12px;vertical-align:middle}
 
 /* Smartphone & Tablet Common Enhancements (max-width: 768px) */
 @media(max-width: 768px) {
+  /* Safe Area for iPhone Home Indicator */
+  .app-wrapper {
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  }
+
   /* Prevent iOS Safari Auto-Zoom on form input focus (must be >= 16px) */
   input, select, textarea, .form-control, .form-select {
     font-size: 16px !important;
   }
   .form-control, .form-select {
-    min-height: 42px;
+    min-height: 44px;
   }
   
   /* Touch-friendly target heights */
   .btn {
-    min-height: 38px;
+    min-height: 42px;
   }
   .btn-xs {
-    min-height: 36px;
+    min-height: 38px;
     padding: 6px 12px;
     font-size: 12px;
     gap: 4px;
@@ -996,17 +1072,17 @@ tbody td{padding:10px 12px;vertical-align:middle}
     justify-content: center;
   }
   .btn-sm {
-    min-height: 40px;
+    min-height: 42px;
     padding: 8px 14px;
     font-size: 13px;
   }
   .month-cb {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 
   .main-content { padding: 10px 8px; }
-  .card { border-radius: 10px; margin-bottom: 12px; }
+  .card { border-radius: 12px; margin-bottom: 12px; }
   .card-body { padding: 12px; }
   .card-header { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
   
@@ -1015,7 +1091,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
     gap: 8px;
     margin-bottom: 12px;
   }
-  .stat-card { padding: 12px; }
+  .stat-card { padding: 12px; border-radius: 10px; }
   .stat-value { font-size: 20px; }
   .stat-icon { width: 38px; height: 38px; font-size: 15px; }
   
@@ -1027,9 +1103,17 @@ tbody td{padding:10px 12px;vertical-align:middle}
   .modal-overlay { padding: 8px !important; }
   .modal-box {
     margin: 0 auto !important;
-    width: calc(100% - 16px) !important;
+    width: calc(100% - 12px) !important;
     max-height: 92vh !important;
     border-radius: 14px !important;
+  }
+  .modal-header-custom {
+    padding: 12px 14px !important;
+  }
+  .modal-close {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 24px !important;
   }
   .modal-body-custom {
     padding: 14px !important;
@@ -1037,7 +1121,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
   }
   .modal-box form button[type=submit] {
     width: 100%;
-    min-height: 44px;
+    min-height: 46px;
     justify-content: center;
     font-size: 15px;
     font-weight: 600;
@@ -1058,6 +1142,32 @@ tbody td{padding:10px 12px;vertical-align:middle}
   .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Filter Pills on Mobile */
+  .filter-pill {
+    min-height: 38px;
+    padding: 7px 14px;
+    font-size: 12px;
+  }
+  .bal-filter-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 10px 6px 10px;
+  }
+  .bal-pills-bar {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .bal-pills-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .bal-pills-bar .filter-pill {
+    flex-shrink: 0;
   }
 
   /* Responsive Collections Card View */
@@ -1092,7 +1202,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
   }
   .mobile-card-actions .btn {
     flex: 1;
-    min-height: 40px;
+    min-height: 42px;
     padding: 8px 6px;
     font-size: 12px;
     font-weight: 600;
@@ -1137,7 +1247,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
   }
   .responsive-cust-table .cust-wa-cell .btn-whatsapp {
     width: 100%;
-    min-height: 40px;
+    min-height: 42px;
     font-size: 13px;
     font-weight: 600;
     justify-content: center;
@@ -1152,11 +1262,277 @@ tbody td{padding:10px 12px;vertical-align:middle}
   }
   .responsive-cust-table .cust-actions-wrap .btn {
     flex: 1;
-    min-height: 40px;
+    min-height: 42px;
     justify-content: center;
     font-size: 13px;
     font-weight: 600;
   }
+
+  /* Responsive Balance Sheet Card View */
+  .responsive-bal-table table, 
+  .responsive-bal-table thead, 
+  .responsive-bal-table tbody, 
+  .responsive-bal-table th, 
+  .responsive-bal-table td, 
+  .responsive-bal-table tr { display: block; }
+  .responsive-bal-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  
+  .responsive-bal-table tbody tr:not(.table-total) {
+    margin-bottom: 12px;
+    background: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  }
+  .responsive-bal-table tbody tr[data-status="owing"] {
+    border-left: 4px solid var(--danger) !important;
+  }
+  .responsive-bal-table tbody tr[data-status="settled"] {
+    border-left: 4px solid var(--info) !important;
+  }
+  .responsive-bal-table tbody tr[data-status="credit"] {
+    border-left: 4px solid var(--success) !important;
+  }
+
+  .responsive-bal-table tbody td {
+    border: none;
+    padding: 3px 0;
+    white-space: normal;
+  }
+  .responsive-bal-table tbody td.bal-idx-cell { display: none; }
+  .responsive-bal-table tbody td.bal-desktop-status { display: none; }
+
+  .bal-mobile-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    width: 100%;
+  }
+  .bal-rank-pill {
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .bal-cust-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+  .bal-mobile-status {
+    display: inline-flex;
+    font-size: 11px;
+    padding: 3px 8px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .bal-cust-addr {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .bal-phone-cell {
+    font-size: 13px;
+    padding: 2px 0 8px 0 !important;
+    border-bottom: 1px dashed var(--border);
+    margin-bottom: 6px;
+  }
+  .bal-phone-link {
+    color: var(--accent) !important;
+    font-weight: 600;
+  }
+
+  /* 3-Column Metrics Grid on Mobile */
+  .bal-metrics-wrap {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0;
+  }
+  .responsive-bal-table tbody td.bal-metric-cell {
+    display: flex !important;
+    flex-direction: column;
+    flex: 1;
+    background: var(--surface2);
+    padding: 8px 4px !important;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid rgba(0,0,0,.03);
+  }
+  .bal-metric-label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .bal-metric-cell strong {
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .bal-card-actions {
+    display: flex !important;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+  .bal-card-actions .bal-btn-wa {
+    flex: 2;
+    min-height: 42px;
+    font-size: 13px;
+    font-weight: 600;
+    justify-content: center;
+  }
+  .bal-card-actions .bal-btn-call {
+    display: inline-flex !important;
+    flex: 1;
+    min-height: 42px;
+    font-size: 13px;
+    font-weight: 600;
+    justify-content: center;
+  }
+
+  /* Table Total Card on Mobile */
+  .responsive-bal-table tbody tr.table-total {
+    margin-top: 16px;
+    background: var(--surface2) !important;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: block;
+  }
+  .responsive-bal-table tbody tr.table-total td {
+    display: block;
+    padding: 4px 0;
+    border: none;
+  }
+  .responsive-bal-table tbody tr.table-total td:first-child {
+    font-size: 15px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+  }
+
+  /* Responsive Vacation Holds Card View */
+  .responsive-vac-table table, 
+  .responsive-vac-table thead, 
+  .responsive-vac-table tbody, 
+  .responsive-vac-table th, 
+  .responsive-vac-table td, 
+  .responsive-vac-table tr { display: block; }
+  .responsive-vac-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-vac-table tbody tr {
+    margin-bottom: 12px;
+    background: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  }
+  .responsive-vac-table tbody td {
+    border: none;
+    padding: 3px 0;
+    white-space: normal;
+  }
+  .responsive-vac-table tbody td:first-child { display: none; }
+  .vac-metric-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .vac-card-actions {
+    display: flex !important;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+  .vac-card-actions form {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+  .vac-card-actions input[type=date] {
+    flex: 1;
+    min-height: 40px;
+  }
+  .vac-card-actions .btn {
+    min-height: 40px;
+    justify-content: center;
+    font-weight: 600;
+  }
+
+  /* Responsive Report Card View */
+  .responsive-report-table table, 
+  .responsive-report-table thead, 
+  .responsive-report-table tbody, 
+  .responsive-report-table th, 
+  .responsive-report-table td, 
+  .responsive-report-table tr { display: block; }
+  .responsive-report-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-report-table tbody tr {
+    margin-bottom: 12px;
+    background: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  }
+  .responsive-report-table tbody td {
+    border: none;
+    padding: 3px 0;
+    white-space: normal;
+  }
+  .responsive-report-table tbody td:first-child { display: none; }
+  .report-metric-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .report-card-actions {
+    display: flex !important;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    align-items: center;
+  }
+  .report-card-actions form {
+    display: flex !important;
+    gap: 6px;
+    align-items: center;
+  }
+  .report-card-actions input[type=number] {
+    width: 100px !important;
+    min-height: 38px;
+  }
+  .report-card-actions .btn {
+    min-height: 38px;
+    padding: 6px 12px;
+  }
+
   .mobile-only-icon { display: inline-block; opacity: 0.6; font-size: 11px; margin-right: 4px; }
   .mobile-action-label { display: inline; }
 }
@@ -1296,7 +1672,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
 </div>
 <div class="card">
   <div class="card-header"><div class="card-header-title"><i class="fas fa-users"></i> Collections by Staff — <?= date("F Y",strtotime($display_month)) ?></div></div>
-  <div class="table-wrap">
+  <div class="table-wrap responsive-report-table">
     <table>
       <thead><tr><th>Staff Name</th><th>Collections</th><th style="text-align:right">Total Collected</th><th style="text-align:right">Avg per Record</th></tr></thead>
       <tbody>
@@ -1406,7 +1782,7 @@ tbody td{padding:10px 12px;vertical-align:middle}
             <br><span class="badge badge-yellow" style="margin-top:3px;font-size:10px">🤝 Pay by <?= $p['promise']['promise_date'] ?><?= $p['promise']['note'] ? ' — '.htmlspecialchars($p['promise']['note']) : '' ?></span>
             <?php endif; ?>
           </td>
-          <td class="mono"><?= $p['mobile'] ?></td>
+          <td class="mono"><a href="tel:<?= $p['mobile'] ?>" style="color:inherit;text-decoration:none"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $p['mobile'] ?></a></td>
           <td><span class="badge badge-blue">Day <?= $p['billing_day'] ?></span></td>
           <td style="color:var(--text-muted);font-size:12px"><?= $p['building'].' '.$p['apartment'].' R'.$p['room'] ?></td>
           <td><?php foreach($p['unpaid'] as $u): ?><div style="font-size:12px"><span class="due-tag"><?= date('M Y',strtotime($u['month'].'-01')).' — '.$u['due'].' SAR' ?></span></div><?php endforeach; ?></td>
@@ -1525,7 +1901,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
     </div>
     <?php endif; ?>
 
-    <div class="table-wrap">
+    <div class="table-wrap responsive-vac-table">
       <table>
         <thead><tr>
           <th>#</th>
@@ -1825,16 +2201,16 @@ usort($cust_rows, function($a, $b) {
       <span class="badge badge-blue"><?= count($cust_rows) ?> active</span>
     </div>
   </div>
-  <div style="padding:12px 14px 8px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name, phone, building, room…" style="flex:1;min-width:200px;font-size:13px" oninput="filterBalance(this.value)">
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
+  <div class="bal-filter-wrap">
+    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name, phone, building, room…" style="font-size:14px" oninput="filterBalance(this.value)">
+    <div class="bal-pills-bar">
       <button type="button" class="filter-pill balance-filter-pill active" onclick="setBalanceFilter('all', this)">All (<?= count($cust_rows) ?>)</button>
       <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('owing', this)">⚠️ Owing (<?= $owing_count ?>)</button>
       <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('settled', this)">✓ Settled (<?= $settled_count ?>)</button>
       <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('credit', this)">★ Credit (<?= $credit_count ?>)</button>
     </div>
   </div>
-  <div class="table-wrap" style="max-height:70vh;overflow-y:auto">
+  <div class="table-wrap responsive-bal-table" style="max-height:75vh;overflow-y:auto">
     <table id="balanceTable">
       <thead><tr>
         <th>#</th>
@@ -1856,32 +2232,52 @@ usort($cust_rows, function($a, $b) {
         $status_color = $bal["balance"] > 0 ? 'badge-green' : ($bal["balance"] == 0 ? 'badge-blue' : 'badge-red');
       ?>
         <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : 'background:rgba(34,197,94,.04)' ?>" data-status="<?= strtolower($status) ?>">
-          <td class="mono" style="color:var(--text-muted)"><?= $idx ?></td>
-          <td>
-            <strong><?= htmlspecialchars($c["name"]) ?></strong>
+          <td class="mono bal-idx-cell" style="color:var(--text-muted)"><?= $idx ?></td>
+          <td class="bal-cust-cell">
+            <div class="bal-mobile-top">
+              <span class="bal-rank-pill">#<?= $idx ?></span>
+              <strong class="bal-cust-name"><?= htmlspecialchars($c["name"]) ?></strong>
+              <span class="badge <?= $status_color ?> bal-mobile-status"><?= $status ?></span>
+            </div>
             <?php if (!empty($c["building"]) || !empty($c["room"])): ?>
-              <br><small style="color:var(--text-muted)"><?= htmlspecialchars(trim(($c["building"] ?? "") . " " . ($c["apartment"] ?? "") . " " . (!empty($c["room"]) ? "R" . $c["room"] : ""))) ?></small>
+              <div class="bal-cust-addr">
+                <i class="fas fa-map-marker-alt mobile-only-icon"></i><?= htmlspecialchars(trim(($c["building"] ?? "") . " " . ($c["apartment"] ?? "") . " " . (!empty($c["room"]) ? "R" . $c["room"] : ""))) ?>
+              </div>
             <?php endif; ?>
           </td>
-          <td class="mono"><a href="tel:<?= $c["mobile"] ?>" style="color:inherit;text-decoration:none"><?= $c["mobile"] ?></a></td>
-          <td class="mono"><strong><?= number_format($bal["total_owed"], 2) ?></strong></td>
-          <td class="mono"><strong style="color:var(--success)"><?= number_format($bal["total_paid"], 2) ?></strong></td>
-          <td class="mono"><strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal["balance"], 2) ?> SAR</strong></td>
-          <td><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
-          <td>
-            <?php if ($bal["balance"] < 0): ?>
-              <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
-            <?php else: ?>
-              <span style="color:var(--text-muted);font-size:12px">—</span>
-            <?php endif; ?>
+          <td class="mono bal-phone-cell">
+            <a href="tel:<?= $c["mobile"] ?>" class="bal-phone-link"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $c["mobile"] ?></a>
+          </td>
+          <td class="mono bal-metric-cell bal-owed-cell">
+            <span class="bal-metric-label">Owed</span>
+            <strong><?= number_format($bal["total_owed"], 2) ?> SAR</strong>
+          </td>
+          <td class="mono bal-metric-cell bal-paid-cell">
+            <span class="bal-metric-label">Paid</span>
+            <strong style="color:var(--success)"><?= number_format($bal["total_paid"], 2) ?> SAR</strong>
+          </td>
+          <td class="mono bal-metric-cell bal-bal-cell">
+            <span class="bal-metric-label">Balance</span>
+            <strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal["balance"], 2) ?> SAR</strong>
+          </td>
+          <td class="bal-desktop-status"><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
+          <td class="bal-action-cell">
+            <div class="bal-card-actions">
+              <?php if ($bal["balance"] < 0): ?>
+                <button class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp Reminder</span></button>
+                <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
+              <?php else: ?>
+                <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
+              <?php endif; ?>
+            </div>
           </td>
         </tr>
       <?php endforeach; ?>
       <tr class="table-total">
-        <td colspan="3"><strong>TOTAL</strong></td>
-        <td class="mono"><strong><?= number_format($grand_owed, 2) ?></strong></td>
-        <td class="mono"><strong style="color:var(--success)"><?= number_format($grand_paid, 2) ?></strong></td>
-        <td class="mono"><strong style="<?= ($grand_paid - $grand_owed) > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($grand_paid - $grand_owed, 2) ?> SAR</strong></td>
+        <td colspan="3"><strong>GRAND TOTAL</strong></td>
+        <td class="mono"><span class="bal-metric-label">Total Owed</span><strong><?= number_format($grand_owed, 2) ?> SAR</strong></td>
+        <td class="mono"><span class="bal-metric-label">Total Paid</span><strong style="color:var(--success)"><?= number_format($grand_paid, 2) ?> SAR</strong></td>
+        <td class="mono"><span class="bal-metric-label">Net Balance</span><strong style="<?= ($grand_paid - $grand_owed) > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($grand_paid - $grand_owed, 2) ?> SAR</strong></td>
         <td></td>
         <td></td>
       </tr>
@@ -2230,9 +2626,20 @@ document.documentElement.setAttribute('data-theme',savedTheme);
 function updateThemeIcon(){const t=document.documentElement.getAttribute('data-theme');const ic=document.getElementById('theme-icon');if(ic)ic.className=t==='dark'?'fas fa-sun':'fas fa-moon';}
 updateThemeIcon();
 function toggleTheme(){const cur=document.documentElement.getAttribute('data-theme');const next=cur==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);localStorage.setItem('theme',next);updateThemeIcon();}
-function openModal(id){document.getElementById(id).classList.add('show')}
-function closeModal(id){document.getElementById(id).classList.remove('show')}
-document.addEventListener('click',function(e){if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('show');});
+function openModal(id){
+  const el = document.getElementById(id);
+  if(el){ el.classList.add('show'); document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id){
+  const el = document.getElementById(id);
+  if(el){ el.classList.remove('show'); document.body.style.overflow = ''; }
+}
+document.addEventListener('click',function(e){
+  if(e.target.classList.contains('modal-overlay')){
+    e.target.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+});
 setTimeout(()=>{const a=document.getElementById('top-alert');if(a)a.remove()},5000);
 function clearCustForm(){
   ['cust_id','cust_name','cust_mobile','cust_building','cust_apartment','cust_room','cust_start'].forEach(id=>{
@@ -2863,6 +3270,24 @@ function filterBalance(query) {
     if (sug && !sug.contains(e.target) && e.target !== inp) sug.style.display = "none";
   });
 })();
+</script>
+<button id="btnScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="btn-scroll-top" title="Scroll to top" aria-label="Scroll to top"><i class="fas fa-chevron-up"></i></button>
+<script>
+window.addEventListener('scroll', function() {
+  const btn = document.getElementById('btnScrollTop');
+  if (!btn) return;
+  if (window.scrollY > 280) btn.classList.add('visible');
+  else btn.classList.remove('visible');
+}, { passive: true });
+
+document.addEventListener('DOMContentLoaded', function() {
+  const activeTab = document.querySelector('.nav-tabs-wrap a.active');
+  if (activeTab) {
+    try {
+      activeTab.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    } catch(e) {}
+  }
+});
 </script>
 </body>
 </html>
