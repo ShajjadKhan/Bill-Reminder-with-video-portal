@@ -906,6 +906,14 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .mobile-card-actions{display:inline-flex;gap:4px}
 .month-cb{width:18px;height:18px;cursor:pointer}
 
+/* Universal rule for hidden rows across all tables & viewports */
+tr.row-hidden,
+.row-hidden,
+tr[style*="display: none"],
+tr[style*="display:none"] {
+  display: none !important;
+}
+
 /* Dark Theme Overrides */
 [data-theme="dark"] .card,
 [data-theme="dark"] .modal-box,
@@ -1268,7 +1276,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
     left: -9999px !important;
   }
   .responsive-coll-table tbody tr {
-    display: block !important;
+    display: block;
     width: 100% !important;
     margin-bottom: 12px !important;
     background: var(--surface) !important;
@@ -1388,7 +1396,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
     left: -9999px !important;
   }
   .responsive-cust-table tbody tr {
-    display: block !important;
+    display: block;
     width: 100% !important;
     margin-bottom: 12px !important;
     background: var(--surface) !important;
@@ -1490,7 +1498,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
     left: -9999px !important;
   }
   .responsive-bal-table tbody tr:not(.table-total) {
-    display: grid !important;
+    display: grid;
     grid-template-columns: 1fr 1fr 1fr !important;
     gap: 6px !important;
     margin-bottom: 12px !important;
@@ -1632,7 +1640,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
     border: 2px solid var(--border) !important;
     border-radius: 12px !important;
     padding: 14px !important;
-    display: block !important;
+    display: block;
   }
   .responsive-bal-table tbody tr.table-total td {
     display: block !important;
@@ -1660,7 +1668,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
     left: -9999px !important;
   }
   .responsive-vac-table tbody tr {
-    display: block !important;
+    display: block;
     margin-bottom: 12px !important;
     background: var(--surface) !important;
     border: 1px solid var(--border) !important;
@@ -1725,6 +1733,48 @@ a, button, input, select, textarea, .filter-pill, .btn {
 
   .mobile-only-icon { display: inline-block !important; opacity: 0.6 !important; font-size: 11px !important; margin-right: 4px !important; }
   .mobile-action-label { display: inline !important; }
+
+  /* Universal rule to ensure hidden rows stay hidden on mobile */
+  tr.row-hidden,
+  .row-hidden,
+  tr[style*="display: none"],
+  tr[style*="display:none"],
+  .responsive-coll-table tbody tr.row-hidden,
+  .responsive-cust-table tbody tr.row-hidden,
+  .responsive-bal-table tbody tr.row-hidden,
+  .responsive-vac-table tbody tr.row-hidden {
+    display: none !important;
+  }
+
+  /* Empty state / no-match row styling on mobile */
+  #custNoMatchRow,
+  #pendingNoMatchRow,
+  #balanceNoMatchRow,
+  tr.no-match-row {
+    display: block !important;
+    width: 100% !important;
+    background: var(--surface) !important;
+    border: 1px dashed var(--border) !important;
+    border-radius: 12px !important;
+    padding: 18px 14px !important;
+    box-sizing: border-box !important;
+    text-align: center !important;
+  }
+  #custNoMatchRow.row-hidden,
+  #pendingNoMatchRow.row-hidden,
+  #balanceNoMatchRow.row-hidden,
+  tr.no-match-row.row-hidden {
+    display: none !important;
+  }
+  #custNoMatchRow td,
+  #pendingNoMatchRow td,
+  #balanceNoMatchRow td,
+  tr.no-match-row td {
+    display: block !important;
+    border: none !important;
+    padding: 0 !important;
+    text-align: center !important;
+  }
 }
 
 /* Small Smartphone Refinements (max-width: 480px) */
@@ -1903,7 +1953,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
   <div class="card-body">
     <div class="search-wrap">
       <i class="fas fa-search search-icon"></i>
-      <input type="text" id="collSearch" class="form-control" placeholder="Name, mobile, building, room…" autocomplete="off">
+      <input type="search" id="collSearch" class="form-control" placeholder="Search customer (name, mobile, building, room)…" autocomplete="off">
       <div class="search-results" id="collResults" style="display:none"></div>
     </div>
   </div>
@@ -1943,7 +1993,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
   </div>
   <div style="padding: 12px 14px 4px 14px">
     <div class="pending-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-      <input type="text" id="pendingFilterInput" class="form-control" placeholder="🔍 Search pending (name, mobile, building, room)..." style="flex:1;min-width:200px;font-size:13px" oninput="filterPendingTable()">
+      <input type="search" id="pendingFilterInput" class="form-control" placeholder="🔍 Search pending (name, mobile, building, room)..." style="flex:1;min-width:200px;font-size:13px" oninput="filterPendingTable()" onsearch="filterPendingTable()">
       <div class="pending-pills-bar" style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="filter-pill active" onclick="setPendingFilter('all', this)">All</button>
         <button type="button" class="filter-pill" onclick="setPendingFilter('promise', this)">🤝 Promised</button>
@@ -2173,7 +2223,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
   <div class="card-body">
     <div class="search-wrap" style="position:relative">
       <i class="fas fa-search search-icon"></i>
-      <input type="text" id="custSearch" class="form-control" placeholder="Search by name, 05/966 mobile, building, room… (min 2 chars)" autocomplete="off" style="padding-right:32px">
+      <input type="search" id="custSearch" class="form-control" placeholder="Search by name, 05/966 mobile, building, room… (min 2 chars)" autocomplete="off" style="padding-right:32px">
       <button type="button" id="custSearchClear" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:4px" title="Clear search"><i class="fas fa-times-circle"></i></button>
     </div>
   </div>
@@ -2406,7 +2456,7 @@ usort($cust_rows, function($a, $b) {
     </div>
   </div>
   <div class="bal-filter-wrap">
-    <input type="text" id="balanceSearch" class="form-control" placeholder="🔍 Search by name, phone, building, room…" style="font-size:14px" oninput="filterBalance(this.value)">
+    <input type="search" id="balanceSearch" class="form-control" placeholder="🔍 Search by name, phone, building, room…" style="font-size:14px" oninput="filterBalance(this.value)" onsearch="filterBalance(this.value)">
     <div class="bal-pills-bar">
       <button type="button" class="filter-pill balance-filter-pill active" onclick="setBalanceFilter('all', this)">All (<?= count($cust_rows) ?>)</button>
       <button type="button" class="filter-pill balance-filter-pill" onclick="setBalanceFilter('owing', this)">⚠️ Owing (<?= $owing_count ?>)</button>
@@ -2924,10 +2974,16 @@ if(custSearch){
     if(custSearchClear) custSearchClear.style.display=raw?'block':'none';
 
     if(!raw){
-      custRows.forEach(r=>r.style.display='');
+      custRows.forEach(r=>{
+        r.classList.remove('row-hidden');
+        r.style.removeProperty('display');
+      });
       if(countBadge){countBadge.textContent=totalCount+' active';countBadge.className='badge badge-blue';}
       const noRow=document.getElementById('custNoMatchRow');
-      if(noRow) noRow.style.display='none';
+      if(noRow){
+        noRow.classList.add('row-hidden');
+        noRow.style.setProperty('display','none','important');
+      }
       return;
     }
 
@@ -2960,8 +3016,14 @@ if(custSearch){
         return searchBlob.includes(tok);
       });
 
-      if(matches){row.style.display='';visibleCount++;}
-      else{row.style.display='none';}
+      if(matches){
+        row.classList.remove('row-hidden');
+        row.style.removeProperty('display');
+        visibleCount++;
+      } else {
+        row.classList.add('row-hidden');
+        row.style.setProperty('display','none','important');
+      }
     });
 
     if(countBadge){
@@ -2973,20 +3035,26 @@ if(custSearch){
     if(visibleCount===0){
       if(!noRow){
         const tbody=document.getElementById('custTbody');
-        noRow=document.createElement('tr');
-        noRow.id='custNoMatchRow';
-        noRow.innerHTML=`<td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-search" style="font-size:22px;opacity:0.4;display:block;margin-bottom:8px"></i>No customers matching "<strong>${raw}</strong>"</td>`;
-        tbody.appendChild(noRow);
+        if(tbody){
+          noRow=document.createElement('tr');
+          noRow.id='custNoMatchRow';
+          noRow.innerHTML=`<td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-search" style="font-size:22px;opacity:0.4;display:block;margin-bottom:8px"></i>No customers matching "<strong>${raw.replace(/</g,'&lt;')}</strong>"</td>`;
+          tbody.appendChild(noRow);
+        }
       } else {
-        noRow.style.display='';
-        noRow.querySelector('strong').textContent=raw;
+        noRow.classList.remove('row-hidden');
+        noRow.style.removeProperty('display');
+        const strongEl = noRow.querySelector('strong');
+        if(strongEl) strongEl.textContent=raw;
       }
     } else if(noRow){
-      noRow.style.display='none';
+      noRow.classList.add('row-hidden');
+      noRow.style.setProperty('display','none','important');
     }
   }
 
   custSearch.addEventListener('input',doCustFilter);
+  custSearch.addEventListener('search',doCustFilter);
   if(custSearchClear){
     custSearchClear.addEventListener('click',function(){
       custSearch.value='';
@@ -3030,7 +3098,7 @@ if(collSearch){
             return;
           }
           res.innerHTML=data.map(c=>`
-            <div class="search-result-item" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+            <div class="search-result-item" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'" style="padding:10px 14px;cursor:pointer">
               <div style="flex:1;min-width:0;padding-right:12px">
                 <div style="font-weight:600;font-size:14px;color:var(--text);display:flex;align-items:center;gap:6px">
                   <span>${c.name}</span>
@@ -3044,9 +3112,9 @@ if(collSearch){
                   <span class="mono" style="color:var(--success)">${c.monthly_fee||30} SAR</span>
                 </div>
               </div>
-              <div style="display:flex;gap:6px;flex-shrink:0">
-                <button class="btn btn-primary btn-sm" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill-wave'></i> Collect</button>
-                <button class="btn btn-whatsapp btn-sm" title="Send WhatsApp Reminder" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}',${c.id})"><i class='fab fa-whatsapp'></i></button>
+              <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
+                <button type="button" class="btn btn-primary btn-sm" onclick="openCollectModal(${c.id},'${c.name.replace(/'/g,"\\'")}');document.getElementById('collResults').style.display='none'"><i class='fas fa-money-bill-wave'></i> Collect</button>
+                <button type="button" class="btn btn-whatsapp btn-sm" title="Send WhatsApp Reminder" onclick="sendReminderSimple('${c.mobile}','${c.name.replace(/'/g,"\\'")}',${c.id},this)"><i class='fab fa-whatsapp'></i></button>
               </div>
             </div>
           `).join('');
@@ -3070,6 +3138,12 @@ if(collSearch){
     if(e.key==='Escape'){
       const res=document.getElementById('collResults');
       if(res) res.style.display='none';
+    }
+  });
+  collSearch.addEventListener('search', function(){
+    if(!this.value.trim()){
+      const res=document.getElementById('collResults');
+      if(res){ res.style.display='none'; res.innerHTML=''; }
     }
   });
 }
@@ -3267,7 +3341,7 @@ function setPendingFilter(type, btn) {
 
 function filterPendingTable() {
   const q = (document.getElementById('pendingFilterInput')?.value || '').toLowerCase().trim();
-  const rows = document.querySelectorAll('#pendingTable tbody tr');
+  const rows = document.querySelectorAll('#pendingTable tbody tr:not(#pendingNoMatchRow)');
   let visibleCount = 0;
   const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
 
@@ -3275,6 +3349,8 @@ function filterPendingTable() {
     const text = r.textContent.toLowerCase();
     const hasPromise = r.getAttribute('data-has-promise') === '1';
     const unpaidCount = parseInt(r.getAttribute('data-unpaid-count') || '1');
+    const bldg = (r.getAttribute('data-building') || '').toLowerCase();
+    const room = (r.getAttribute('data-room') || '').toLowerCase();
     
     let passFilter = true;
     if (activePendingFilter === 'promise') passFilter = hasPromise;
@@ -3283,7 +3359,7 @@ function filterPendingTable() {
     let passQuery = true;
     if (tokens.length > 0) {
       passQuery = tokens.every(tok => {
-        if (text.includes(tok)) return true;
+        if (text.includes(tok) || bldg.includes(tok) || room.includes(tok)) return true;
         const dig = tok.replace(/\D/g, '');
         if (dig.length >= 2) {
           if (dig.startsWith('05') && text.includes('966' + dig.slice(1))) return true;
@@ -3295,14 +3371,36 @@ function filterPendingTable() {
     }
 
     if (passFilter && passQuery) {
-      r.style.display = '';
+      r.classList.remove('row-hidden');
+      r.style.removeProperty('display');
       visibleCount++;
     } else {
-      r.style.display = 'none';
+      r.classList.add('row-hidden');
+      r.style.setProperty('display', 'none', 'important');
     }
   });
+
   const badge = document.getElementById('pendingBadgeCount');
   if (badge) badge.textContent = visibleCount + ' shown';
+
+  let noRow = document.getElementById('pendingNoMatchRow');
+  if (visibleCount === 0 && (q || activePendingFilter !== 'all')) {
+    if (!noRow) {
+      const tbody = document.querySelector('#pendingTable tbody');
+      if (tbody) {
+        noRow = document.createElement('tr');
+        noRow.id = 'pendingNoMatchRow';
+        noRow.innerHTML = `<td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-search" style="font-size:22px;opacity:0.4;display:block;margin-bottom:8px"></i>No pending bills matching current search/filter</td>`;
+        tbody.appendChild(noRow);
+      }
+    } else {
+      noRow.classList.remove('row-hidden');
+      noRow.style.removeProperty('display');
+    }
+  } else if (noRow) {
+    noRow.classList.add('row-hidden');
+    noRow.style.setProperty('display', 'none', 'important');
+  }
 }
 
 function sendReminderSimple(mobile,name,custId,btnEl){
@@ -3406,8 +3504,9 @@ function filterBalance(query) {
   const q = (query !== undefined ? query : (document.getElementById('balanceSearch')?.value || '')).toLowerCase().trim();
   const table = document.getElementById('balanceTable') || document.querySelector('table');
   if (!table) return;
-  const rows = table.querySelectorAll('tbody tr:not(.table-total)');
+  const rows = table.querySelectorAll('tbody tr:not(.table-total):not(#balanceNoMatchRow)');
   const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+  let visibleCount = 0;
 
   rows.forEach(r => {
     const text = r.textContent.toLowerCase();
@@ -3420,11 +3519,46 @@ function filterBalance(query) {
 
     let passQuery = true;
     if (tokens.length > 0) {
-      passQuery = tokens.every(tok => text.includes(tok));
+      passQuery = tokens.every(tok => {
+        if (text.includes(tok)) return true;
+        const dig = tok.replace(/\D/g, '');
+        if (dig.length >= 2) {
+          if (dig.startsWith('05') && text.includes('966' + dig.slice(1))) return true;
+          if (dig.startsWith('9665') && text.includes('0' + dig.slice(3))) return true;
+          if (dig.startsWith('5') && (text.includes('0' + dig) || text.includes('966' + dig))) return true;
+        }
+        return false;
+      });
     }
 
-    r.style.display = (passFilter && passQuery) ? '' : 'none';
+    if (passFilter && passQuery) {
+      r.classList.remove('row-hidden');
+      r.style.removeProperty('display');
+      visibleCount++;
+    } else {
+      r.classList.add('row-hidden');
+      r.style.setProperty('display', 'none', 'important');
+    }
   });
+
+  let noRow = document.getElementById('balanceNoMatchRow');
+  if (visibleCount === 0 && (q || activeBalanceFilter !== 'all')) {
+    if (!noRow) {
+      const tbody = table.querySelector('tbody');
+      if (tbody) {
+        noRow = document.createElement('tr');
+        noRow.id = 'balanceNoMatchRow';
+        noRow.innerHTML = `<td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-search" style="font-size:22px;opacity:0.4;display:block;margin-bottom:8px"></i>No records matching current search/filter</td>`;
+        tbody.appendChild(noRow);
+      }
+    } else {
+      noRow.classList.remove('row-hidden');
+      noRow.style.removeProperty('display');
+    }
+  } else if (noRow) {
+    noRow.classList.add('row-hidden');
+    noRow.style.setProperty('display', 'none', 'important');
+  }
 }
 </script>
 <script>
