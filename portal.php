@@ -133,8 +133,12 @@ if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
     header('Location: portal.php?page=vacations'); exit;
 }
 
-if (isLoggedIn() && isAdmin() && $action === 'toggle_reminders') {
+if ($action === 'toggle_reminders') {
     header('Content-Type: application/json');
+    if (!isLoggedIn() || !isAdmin()) {
+        echo json_encode(['ok'=>false, 'error'=>'Session expired or unauthorized. Please refresh and log in.']);
+        exit;
+    }
     $cid = intval($_POST['customer_id'] ?? 0);
     $cust = $db->querySingle("SELECT id, name, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE id=$cid", true);
     if (!$cust) {
