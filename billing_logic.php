@@ -284,3 +284,90 @@ if (!function_exists('buildReceiptMsg')) {
         return $msg;
     }
 }
+
+
+if (!function_exists("getDefaultPaymentAccountsText")) {
+    function getDefaultPaymentAccountsText() {
+        return "💳 Payment Accounts / طرق الدفع:
+
+" .
+               "1️⃣ Shajjad Khan:
+" .
+               "📱 +966597595059 (STC Pay, Barq, AlinmaPay)
+" .
+               "🏦 Alinma Bank IBAN:
+" .
+               "SA3305000068206538133000
+
+" .
+               "2️⃣ Riyad Hossain:
+" .
+               "📱 +966552036454 (STC Pay, Barq)
+" .
+               "🏦 Alinma Bank IBAN:
+" .
+               "SA5805000068207720354000";
+    }
+}
+
+if (!function_exists("getPaymentAccountsText")) {
+    function getPaymentAccountsText($db) {
+        $custom = getSetting($db, "payment_accounts");
+        if (!empty(trim($custom))) {
+            return trim($custom);
+        }
+        return getDefaultPaymentAccountsText();
+    }
+}
+
+if (!function_exists("buildReminderMsg")) {
+    function buildReminderMsg($db, $customer_name, $join_date, $active_until, $expired, $days_diff, $total_due, $pay_by_day) {
+        $movie_server = getSetting($db, "movie_server") ?: "http://10.12.14.16:8082";
+        $s1n = getSetting($db, "support_1_name"); $s1p = getSetting($db, "support_1_phone");
+        $s2n = getSetting($db, "support_2_name"); $s2p = getSetting($db, "support_2_phone");
+
+        $message = "📶 CYBERNET ACCOUNT STATUS
+";
+        $message .= "Assalamu Alaikum {$customer_name}!
+
+";
+        if ($join_date instanceof DateTime) {
+            $message .= "📅 Connected since: " . $join_date->format("d M Y") . "
+";
+        }
+        if ($expired) {
+            $message .= "⚠️ Your service expired on: " . $active_until->format("d M Y") . " ($days_diff days ago)
+
+";
+            $message .= "💰 Please recharge $total_due SAR to continue service
+";
+        } else {
+            $message .= "✅ Your service is active until: " . $active_until->format("d M Y") . "
+
+";
+            $message .= "💰 Please recharge $total_due SAR before it ends
+";
+        }
+        $message .= "📆 Pay by: Day $pay_by_day of this month
+
+";
+        $message .= getPaymentAccountsText($db) . "
+
+";
+        $message .= "🎬 Movies: $movie_server
+";
+        $message .= "⚽ Live Football: http://10.12.14.16:8086
+
+";
+        $message .= "📞 Support (24/7):
+";
+        if ($s1n && $s1p) $message .= "$s1n: $s1p
+";
+        if ($s2n && $s2p) $message .= "$s2n: $s2p
+";
+        $message .= "
+Please recharge on time to avoid service interruption. 🙏
+";
+        return $message;
+    }
+}

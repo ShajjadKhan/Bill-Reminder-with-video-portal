@@ -102,23 +102,7 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $expired = $active_until < $today;
     $days_diff = abs($today->diff($active_until)->days);
 
-    $message = "📶 CYBERNET ACCOUNT STATUS\n";
-    $message .= "Assalamu Alaikum {$c['name']}!\n\n";
-    $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
-    if ($expired) {
-        $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
-        $message .= "💰 Please recharge $total_due SAR to continue service\n";
-    } else {
-        $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
-        $message .= "💰 Please recharge $total_due SAR before it ends\n";
-    }
-    $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
-    $message .= "🎬 Movies: $movie_server\n";
-    $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
-    $message .= "📞 Support (24/7):\n";
-    if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
-    if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
-    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
+    $message = buildReminderMsg($db, $c['name'], $join_dt, $active_until, $expired, $days_diff, $total_due, $pay_by_day);
 
     // Send via sendWhatsAppMessage from billing_logic.php
     if (!getenv('DRY_RUN')) { $res = sendWhatsAppMessage($db, $c['mobile'], $message); }

@@ -61,9 +61,9 @@ $defaults = [
     'openwa_session_id'=> '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4',
     'movie_server'     => 'http://10.12.14.16:8082',
     'support_1_name'   => 'Shajjad Khan',
-    'support_1_phone'  => '+966594266584',
-    'support_2_name'   => '',
-    'support_2_phone'  => '',
+    'support_1_phone'  => '+966597595059',
+    'support_2_name'   => 'Riyad Hossain',
+    'support_2_phone'  => '+966552036454',
 ];
 foreach ($defaults as $k => $v) {
     $ek = SQLite3::escapeString($k);
@@ -186,23 +186,7 @@ if ($action === 'send_manual_reminder' && isLoggedIn()) {
     $s1n = getSetting($db, 'support_1_name'); $s1p = getSetting($db, 'support_1_phone');
     $s2n = getSetting($db, 'support_2_name'); $s2p = getSetting($db, 'support_2_phone');
 
-    $message = "📶 CYBERNET ACCOUNT STATUS\n";
-    $message .= "Assalamu Alaikum {$cust['name']}!\n\n";
-    $message .= "📅 Connected since: " . $join_dt->format('d M Y') . "\n";
-    if ($expired) {
-        $message .= "⚠️ Your service expired on: " . $active_until->format('d M Y') . " ($days_diff days ago)\n\n";
-        $message .= "💰 Please recharge $total_unpaid SAR to continue service\n";
-    } else {
-        $message .= "✅ Your service is active until: " . $active_until->format('d M Y') . "\n\n";
-        $message .= "💰 Please recharge $total_unpaid SAR before it ends\n";
-    }
-    $message .= "📆 Pay by: Day $pay_by_day of this month\n\n";
-    $message .= "🎬 Movies: $movie_server\n";
-    $message .= "⚽ Live Football: http://10.12.14.16:8086\n\n";
-    $message .= "📞 Support (24/7):\n";
-    if ($s1n && $s1p) $message .= "$s1n: $s1p\n";
-    if ($s2n && $s2p) $message .= "$s2n: $s2p\n";
-    $message .= "\nPlease recharge on time to avoid service interruption. 🙏\n";
+    $message = buildReminderMsg($db, $cust['name'], $join_dt, $active_until, $expired, $days_diff, $total_unpaid, $pay_by_day);
 
     $result = sendWhatsAppMessage($db, $cust['mobile'], $message);
     if ($result) {
@@ -337,14 +321,22 @@ if (isLoggedIn() && isMaster() && $action === 'reset_password') {
 if (isLoggedIn() && isMaster() && $action === 'save_support_settings') {
     $s1n = SQLite3::escapeString(trim($_POST['support_1_name'] ?? ''));
     $s1p = SQLite3::escapeString(trim($_POST['support_1_phone'] ?? ''));
+    $s2n = SQLite3::escapeString(trim($_POST['support_2_name'] ?? ''));
+    $s2p = SQLite3::escapeString(trim($_POST['support_2_phone'] ?? ''));
     $movie = SQLite3::escapeString(trim($_POST['movie_server'] ?? ''));
+    $pay_acc = SQLite3::escapeString(trim($_POST['payment_accounts'] ?? ''));
     $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_1_name', '$s1n')");
     $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_1_phone', '$s1p')");
+    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_2_name', '$s2n')");
+    $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('support_2_phone', '$s2p')");
     if (!empty($movie)) {
         $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('movie_server', '$movie')");
     }
-    logAction($db,$_SESSION['user_id'],'UPDATE_SUPPORT',"Updated support contact to $s1n ($s1p)");
-    $_SESSION['msg'] = "Support contact settings updated successfully.";
+    if ($pay_acc !== '') {
+        $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('payment_accounts', '$pay_acc')");
+    }
+    logAction($db,$_SESSION['user_id'],'UPDATE_SUPPORT',"Updated support contacts & payment accounts");
+    $_SESSION['msg'] = "Support & Payment settings updated successfully.";
     header('Location: portal.php?page=admins'); exit;
 }
 
@@ -2595,24 +2587,40 @@ function startBroadcast(){
   </div>
   <div class="card-body">
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
-      These contact details are included in automated WhatsApp daily reminders, manual reminders, and payment receipts. No hardcoded or dummy preset numbers are sent.
+      These contact details and payment accounts are included in automated WhatsApp daily reminders, manual reminders, and payment receipts.
     </p>
-    <form method="post" style="max-width:550px">
+    <form method="post" style="max-width:620px">
       <input type="hidden" name="action" value="save_support_settings">
-      <div style="margin-bottom:12px">
-        <label class="form-label">Support Contact Name</label>
-        <input type="text" name="support_1_name" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_name')) ?>" placeholder="e.g. Shajjad Khan" required>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="form-label">Support 1 Contact Name</label>
+          <input type="text" name="support_1_name" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_name')) ?>" placeholder="e.g. Shajjad Khan" required>
+        </div>
+        <div>
+          <label class="form-label">Support 1 Phone Number</label>
+          <input type="text" name="support_1_phone" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_phone')) ?>" placeholder="e.g. +966597595059" required>
+        </div>
       </div>
-      <div style="margin-bottom:12px">
-        <label class="form-label">Support Phone Number</label>
-        <input type="text" name="support_1_phone" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_1_phone')) ?>" placeholder="e.g. +966594266584" required>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> International format with country code (e.g. +966594266584).</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="form-label">Support 2 Contact Name</label>
+          <input type="text" name="support_2_name" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_2_name')) ?>" placeholder="e.g. Riyad Hossain">
+        </div>
+        <div>
+          <label class="form-label">Support 2 Phone Number</label>
+          <input type="text" name="support_2_phone" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'support_2_phone')) ?>" placeholder="e.g. +966552036454">
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="form-label">Payment Accounts (WhatsApp Reminder)</label>
+        <textarea name="payment_accounts" class="form-control" rows="10" style="font-family:monospace;font-size:13px;line-height:1.4"><?= htmlspecialchars(getPaymentAccountsText($db)) ?></textarea>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> Sent in WhatsApp reminders so customers know how to pay (STC Pay, Barq, Alinma Bank IBAN).</div>
       </div>
       <div style="margin-bottom:16px">
         <label class="form-label">Movie Server URL</label>
         <input type="text" name="movie_server" class="form-control" value="<?= htmlspecialchars(getSetting($db, 'movie_server')) ?>" placeholder="http://10.12.14.16:8082">
       </div>
-      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Support Settings</button>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Support & Payment Settings</button>
     </form>
   </div>
 </div>
