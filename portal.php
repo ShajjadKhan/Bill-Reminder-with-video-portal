@@ -2745,7 +2745,9 @@ usort($cust_rows, function($a, $b) {
     </div>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
       <span class="badge badge-red"><?= $owing_count ?> owing</span>
-      <span class="badge badge-blue"><?= count($cust_rows) ?> active</span>
+      <span class="badge badge-blue"><?= $settled_count ?> settled</span>
+      <span class="badge badge-green"><?= $credit_count ?> credit</span>
+      <span class="badge" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-muted)"><?= count($cust_rows) ?> active</span>
     </div>
   </div>
   <div class="bal-filter-wrap">
@@ -2778,7 +2780,7 @@ usort($cust_rows, function($a, $b) {
         $status = $bal["balance"] > 0 ? 'CREDIT' : ($bal["balance"] == 0 ? 'SETTLED' : 'OWING');
         $status_color = $bal["balance"] > 0 ? 'badge-green' : ($bal["balance"] == 0 ? 'badge-blue' : 'badge-red');
       ?>
-        <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : 'background:rgba(34,197,94,.04)' ?>" data-status="<?= strtolower($status) ?>">
+        <tr style="<?= $bal['balance'] < 0 ? 'background:rgba(239,68,68,.04)' : ($bal['balance'] > 0 ? 'background:rgba(34,197,94,.04)' : '') ?>" data-status="<?= strtolower($status) ?>">
           <td class="mono bal-idx-cell" style="color:var(--text-muted)"><?= $idx ?></td>
           <td class="bal-cust-cell">
             <div class="bal-mobile-top">
@@ -2805,13 +2807,20 @@ usort($cust_rows, function($a, $b) {
           </td>
           <td class="mono bal-metric-cell bal-bal-cell">
             <span class="bal-metric-label">Balance</span>
-            <strong style="<?= $bal['balance'] > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($bal["balance"], 2) ?> SAR</strong>
+            <?php if ($bal['balance'] > 0): ?>
+              <strong style="color:var(--success)">+<?= number_format($bal["balance"], 2) ?> SAR</strong>
+            <?php elseif ($bal['balance'] < 0): ?>
+              <strong style="color:var(--danger)"><?= number_format($bal["balance"], 2) ?> SAR</strong>
+            <?php else: ?>
+              <strong style="color:var(--text-muted)">0.00 SAR</strong>
+            <?php endif; ?>
           </td>
           <td class="bal-desktop-status"><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
           <td class="bal-action-cell">
             <div class="bal-card-actions">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" title="Payment History"><i class="fas fa-history"></i> <span class="mobile-action-label">History</span></button>
               <?php if ($bal["balance"] < 0): ?>
-                <button class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp Reminder</span></button>
+                <button type="button" class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp Reminder</span></button>
                 <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
               <?php else: ?>
                 <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
@@ -2824,7 +2833,15 @@ usort($cust_rows, function($a, $b) {
         <td colspan="3"><strong>GRAND TOTAL</strong></td>
         <td class="mono"><span class="bal-metric-label">Total Owed</span><strong><?= number_format($grand_owed, 2) ?> SAR</strong></td>
         <td class="mono"><span class="bal-metric-label">Total Paid</span><strong style="color:var(--success)"><?= number_format($grand_paid, 2) ?> SAR</strong></td>
-        <td class="mono"><span class="bal-metric-label">Net Balance</span><strong style="<?= ($grand_paid - $grand_owed) > 0 ? 'color:var(--success)' : 'color:var(--danger)' ?>"><?= number_format($grand_paid - $grand_owed, 2) ?> SAR</strong></td>
+        <td class="mono"><span class="bal-metric-label">Net Balance</span><?php 
+          $grand_net = round($grand_paid - $grand_owed, 2);
+          if ($grand_net > 0): ?>
+            <strong style="color:var(--success)">+<?= number_format($grand_net, 2) ?> SAR</strong>
+          <?php elseif ($grand_net < 0): ?>
+            <strong style="color:var(--danger)"><?= number_format($grand_net, 2) ?> SAR</strong>
+          <?php else: ?>
+            <strong style="color:var(--text-muted)">0.00 SAR</strong>
+          <?php endif; ?></td>
         <td></td>
         <td></td>
       </tr>

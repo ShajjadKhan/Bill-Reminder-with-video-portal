@@ -72,90 +72,8 @@ if (!function_exists('getEffectiveBillingStart')) {
     }
 }
 
-if (!function_exists('getUnpaidMonths')) {
-    function getUnpaidMonths($db, $customer_id, $current_month = null) {
-        $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=" . intval($customer_id), true);
-        if (!$c) return [];
-
-        $fee   = max(1, floatval($c['monthly_fee'] ?: 30));
-        $bd    = (int)($c['billing_day'] ?: 1);
-        $today = new DateTime();
-        $start = getEffectiveBillingStart($c['billing_start_date'], $bd);
-
-        $months = [];
-        $cur    = clone $start;
-        $limit  = 60;
-        $i      = 0;
-
-        while ($cur <= $today && $i++ < $limit) {
-            $months[]   = $cur->format('Y-m');
-            $next_year  = (int)$cur->format('Y');
-            $next_month = (int)$cur->format('n') + 1;
-            if ($next_month > 12) { $next_month = 1; $next_year++; }
-            $days_in_target_month = (int)cal_days_in_month(CAL_GREGORIAN, $next_month, $next_year);
-            $safe_day = min($bd, $days_in_target_month);
-            $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $safe_day));
-        }
-
-        $res = $db->query("SELECT month_year, SUM(amount) as total, MAX(is_settled) as settled FROM collections WHERE customer_id=" . intval($customer_id) . " GROUP BY month_year");
-        $paid = [];
-        while ($r = $res->fetchArray(SQLITE3_ASSOC)) {
-            $paid[$r['month_year']] = ['total' => floatval($r['total']), 'settled' => intval($r['settled'])];
-        }
-
-        $vholds = [];
-        $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=" . intval($customer_id));
-        while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
-            $vholds[] = [
-                's' => new DateTime($h['hold_start']),
-                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : null
-            ];
-        }
-
-        $unpaid = [];
-        foreach ($months as $m) {
-            $mStart = new DateTime($m . '-01');
-            $mEnd   = clone $mStart;
-            $mEnd->modify('last day of this month');
-            $dim = (int)$mEnd->format('j');
-
-            // Count billable days in this month
-            $billable = 0;
-            $d = clone $mStart;
-            while ($d <= $mEnd) {
-                $in_hold = false;
-                foreach ($vholds as $vh) {
-                    if ($vh['e'] === null) {
-                        if ($d >= $vh['s']) { $in_hold = true; break; }
-                    } else {
-                        if ($d >= $vh['s'] && $d <= $vh['e']) { $in_hold = true; break; }
-                    }
-                }
-                if (!$in_hold) $billable++;
-                $d->modify('+1 day');
-            }
-
-            if ($billable == 0) continue; // Full month on vacation
-
-            $mfee = round($fee * $billable / $dim, 2);
-            $p = $paid[$m] ?? null;
-
-            if ($p && ($p['settled'] == 1 || ($p['total'] >= ($mfee - 0.05)))) {
-                continue; // Paid or settled
-            }
-
-            $paid_amt = $p ? $p['total'] : 0;
-            $due = round($mfee - $paid_amt, 2);
-            if ($due > 0) {
-                $unpaid[] = ['month' => $m, 'due' => $due, 'fee' => $mfee, 'paid' => $paid_amt];
-            }
-        }
-        return $unpaid;
-    }
-}
-
-if (!function_exists('getCustomerBalance')) {
-    function getCustomerBalance($db, $customer_id) {
+if (!function_exists('getCustomerAccountDetails')) {
+    function getCustomerAccountDetails($db, $customer_id, $current_month = null) {
         $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=" . intval($customer_id), true);
         if (!$c) return null;
 
@@ -179,6 +97,23 @@ if (!function_exists('getCustomerBalance')) {
             $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $safe_day));
         }
 
+        // Collections
+        $res = $db->query("SELECT id, month_year, amount, is_settled FROM collections WHERE customer_id=" . intval($customer_id) . " ORDER BY month_year ASC, id ASC");
+        $colls_by_month = [];
+        $total_cash_paid = 0;
+        while ($r = $res->fetchArray(SQLITE3_ASSOC)) {
+            $amt = floatval($r['amount']);
+            $settled = intval($r['is_settled']);
+            $my = $r['month_year'];
+            if (!isset($colls_by_month[$my])) {
+                $colls_by_month[$my] = ['total' => 0, 'settled' => 0];
+            }
+            $colls_by_month[$my]['total'] += $amt;
+            if ($settled == 1) $colls_by_month[$my]['settled'] = 1;
+            if ($amt > 0) $total_cash_paid += $amt;
+        }
+
+        // Vacation holds
         $vholds = [];
         $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=" . intval($customer_id));
         while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
@@ -188,6 +123,8 @@ if (!function_exists('getCustomerBalance')) {
             ];
         }
 
+        // Calculate monthly expected fees
+        $month_details = [];
         $total_owed = 0;
         $billable_days_total = 0;
 
@@ -212,15 +149,79 @@ if (!function_exists('getCustomerBalance')) {
                 $d->modify('+1 day');
             }
 
-            if ($billable == 0) continue;
+            if ($billable == 0) {
+                // Full vacation month
+                $month_details[$m] = ['fee' => 0, 'billable' => 0, 'dim' => $dim, 'waived' => false];
+                continue;
+            }
+
             $mfee = round($fee * $billable / $dim, 2);
-            $total_owed += $mfee;
+            $p = $colls_by_month[$m] ?? null;
+
+            // If explicitly marked settled, effective fee owed cannot exceed what was paid for this month
+            if ($p && $p['settled'] == 1 && $p['total'] < $mfee) {
+                $eff_fee = $p['total'];
+                $month_details[$m] = ['fee' => $eff_fee, 'billable' => $billable, 'dim' => $dim, 'waived' => true, 'orig_fee' => $mfee];
+                $total_owed += $eff_fee;
+            } else {
+                $month_details[$m] = ['fee' => $mfee, 'billable' => $billable, 'dim' => $dim, 'waived' => false];
+                $total_owed += $mfee;
+            }
             $billable_days_total += $billable;
         }
 
         $total_owed = round($total_owed, 2);
-        $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=" . intval($customer_id) . " AND amount > 0");
+        $total_paid = round($total_cash_paid, 2);
         $balance = round($total_paid - $total_owed, 2);
+
+        // Advance / unallocated credits (payments in months not in $months, e.g. future or pre-start)
+        $excess_credit = 0;
+        foreach ($colls_by_month as $my => $p) {
+            if (!isset($month_details[$my])) {
+                $excess_credit += $p['total'];
+            }
+        }
+
+        // Targeted payments for due months
+        $unpaid_list = [];
+        foreach ($month_details as $m => $info) {
+            $fee_due = $info['fee'];
+            $p = $colls_by_month[$m] ?? null;
+            $targeted_paid = $p ? $p['total'] : 0;
+
+            if ($info['waived']) {
+                continue;
+            }
+
+            if ($targeted_paid >= ($fee_due - 0.05)) {
+                $surplus = $targeted_paid - $fee_due;
+                if ($surplus > 0.05) {
+                    $excess_credit += $surplus;
+                }
+            } else {
+                $rem_due = round($fee_due - $targeted_paid, 2);
+                $unpaid_list[$m] = ['month' => $m, 'fee' => $fee_due, 'paid' => $targeted_paid, 'rem_due' => $rem_due];
+            }
+        }
+
+        // Apply excess credit to remaining unpaid months in chronological order
+        $final_unpaid = [];
+        foreach ($unpaid_list as $m => $u) {
+            if ($excess_credit >= ($u['rem_due'] - 0.05)) {
+                $excess_credit -= $u['rem_due'];
+            } else {
+                $still_due = round($u['rem_due'] - max(0, $excess_credit), 2);
+                $excess_credit = 0;
+                if ($still_due > 0.05) {
+                    $final_unpaid[] = [
+                        'month' => $m,
+                        'due'   => $still_due,
+                        'fee'   => $u['fee'],
+                        'paid'  => round($u['fee'] - $still_due, 2)
+                    ];
+                }
+            }
+        }
 
         return [
             'total_owed'    => $total_owed,
@@ -229,8 +230,22 @@ if (!function_exists('getCustomerBalance')) {
             'billable_days' => $billable_days_total,
             'daily_rate'    => round($fee / 30, 4),
             'has_credit'    => $balance >= 0,
-            'owes'          => abs(min(0, $balance))
+            'owes'          => abs(min(0, $balance)),
+            'unpaid'        => $final_unpaid
         ];
+    }
+}
+
+if (!function_exists('getUnpaidMonths')) {
+    function getUnpaidMonths($db, $customer_id, $current_month = null) {
+        $acct = getCustomerAccountDetails($db, $customer_id, $current_month);
+        return $acct ? $acct['unpaid'] : [];
+    }
+}
+
+if (!function_exists('getCustomerBalance')) {
+    function getCustomerBalance($db, $customer_id) {
+        return getCustomerAccountDetails($db, $customer_id);
     }
 }
 
