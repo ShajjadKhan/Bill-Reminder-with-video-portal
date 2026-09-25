@@ -245,7 +245,56 @@ if (!function_exists('getUnpaidMonths')) {
 
 if (!function_exists('getCustomerBalance')) {
     function getCustomerBalance($db, $customer_id) {
-        return getCustomerAccountDetails($db, $customer_id);
+        $cu = $db->querySingle("SELECT billing_start_date, monthly_fee, billing_day FROM customers WHERE id=" . intval($customer_id), true);
+        if (!$cu) return null;
+
+        $fee = max(1, floatval($cu['monthly_fee'] ?: 30));
+        $daily_rate = round($fee / 30, 4);
+        $start = new DateTime($cu['billing_start_date'] ?: date('Y-m-01'));
+        $today = new DateTime(date('Y-m-d'));
+
+        // Vacation holds
+        $holds_res = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=" . intval($customer_id));
+        $holds = [];
+        while ($h = $holds_res->fetchArray(SQLITE3_ASSOC)) {
+            $holds[] = [
+                's' => new DateTime($h['hold_start']),
+                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : null
+            ];
+        }
+
+        // Billable days from start date to yesterday inclusive
+        $billable_days = 0;
+        $cur = clone $start;
+        $yesterday = clone $today;
+        $yesterday->modify('-1 day');
+
+        while ($cur <= $yesterday) {
+            $in_hold = false;
+            foreach ($holds as $h) {
+                if ($h['e'] === null) {
+                    if ($cur >= $h['s']) { $in_hold = true; break; }
+                } else {
+                    if ($cur >= $h['s'] && $cur <= $h['e']) { $in_hold = true; break; }
+                }
+            }
+            if (!$in_hold) $billable_days++;
+            $cur->modify('+1 day');
+        }
+
+        $total_owed = round($billable_days * $daily_rate, 2);
+        $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=" . intval($customer_id) . " AND amount > 0");
+        $balance = round($total_paid - $total_owed, 2);
+
+        return [
+            'total_owed'    => $total_owed,
+            'total_paid'    => $total_paid,
+            'balance'       => $balance,
+            'billable_days' => $billable_days,
+            'daily_rate'    => $daily_rate,
+            'has_credit'    => $balance >= 0,
+            'owes'          => abs(min(0, $balance))
+        ];
     }
 }
 
