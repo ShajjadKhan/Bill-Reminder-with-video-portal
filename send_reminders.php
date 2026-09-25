@@ -15,13 +15,20 @@ $target_2 = (clone $today)->modify('+2 days');
 $target_days = array_unique([(int)$target_5->format('j'), (int)$target_2->format('j')]);
 $current_month = $today->format('Y-m');
 
-$customers = $db->query("SELECT id, name, mobile, due_day, billing_day, billing_start_date, monthly_fee, pay_by_day FROM customers WHERE status='active'");
+$customers = $db->query("SELECT id, name, mobile, due_day, billing_day, billing_start_date, monthly_fee, pay_by_day, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE status='active'");
 
 $sent = 0;
 $skipped = 0;
 
 while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $cid = (int)$c['id'];
+
+    // 0. Check if customer has muted reminders
+    if (isset($c['reminders_enabled']) && (int)$c['reminders_enabled'] === 0) {
+        echo "SKIPPED (reminders muted by admin/request): {$c['name']}\n";
+        $skipped++;
+        continue;
+    }
     $due_day = (int)($c['due_day'] ?: $c['billing_day'] ?: 1);
     $days_in_month = (int)date('t');
     $effective_due = min($due_day, $days_in_month);

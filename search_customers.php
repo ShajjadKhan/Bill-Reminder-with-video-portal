@@ -57,7 +57,7 @@ $where_sql = implode(' AND ', $where_clauses);
 $clean_all = str_replace(['%', '_'], '', $raw_q);
 $digits_all = preg_replace('/\D/', '', $raw_q);
 
-$sql = "SELECT id, name, mobile, building, apartment, room, billing_day, billing_start_date, monthly_fee, status
+$sql = "SELECT id, name, mobile, building, apartment, room, billing_day, billing_start_date, monthly_fee, status, COALESCE(reminders_enabled, 1) as reminders_enabled
         FROM customers
         WHERE $where_sql
         ORDER BY 

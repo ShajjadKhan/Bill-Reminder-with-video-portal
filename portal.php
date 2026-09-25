@@ -133,11 +133,32 @@ if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
     header('Location: portal.php?page=vacations'); exit;
 }
 
+if (isLoggedIn() && isAdmin() && $action === 'toggle_reminders') {
+    header('Content-Type: application/json');
+    $cid = intval($_POST['customer_id'] ?? 0);
+    $cust = $db->querySingle("SELECT id, name, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE id=$cid", true);
+    if (!$cust) {
+        echo json_encode(['ok'=>false, 'error'=>'Customer not found']);
+        exit;
+    }
+    $new_val = ((int)$cust['reminders_enabled'] === 1) ? 0 : 1;
+    $db->exec("UPDATE customers SET reminders_enabled=$new_val WHERE id=$cid");
+    $action_label = $new_val ? 'ENABLE_REMINDERS' : 'MUTE_REMINDERS';
+    logAction($db, $_SESSION['user_id'], $action_label, ($new_val ? "Enabled" : "Muted") . " WhatsApp reminders for {$cust['name']}");
+    echo json_encode(['ok'=>true, 'reminders_enabled'=>$new_val, 'name'=>$cust['name']]);
+    exit;
+}
+
 if ($action === 'send_manual_reminder' && isLoggedIn()) {
     header('Content-Type: application/json');
     $cid = intval($_POST['customer_id'] ?? 0);
-    $cust = $db->querySingle("SELECT * FROM customers WHERE id=$cid", true);
+    $cust = $db->querySingle("SELECT *, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE id=$cid", true);
     if (!$cust) { echo json_encode(['ok'=>false,'error'=>'Customer not found']); exit; }
+
+    if ((int)$cust['reminders_enabled'] === 0) {
+        echo json_encode(['ok'=>false, 'error'=>"WhatsApp reminders are muted for {$cust['name']} upon request."]);
+        exit;
+    }
 
     $current_month = date('Y-m');
     $unpaid = getUnpaidMonths($db, $cid, $current_month);
@@ -461,17 +482,19 @@ if (isLoggedIn() && isAdmin() && $action === 'save_customer') {
     $join_date   = SQLite3::escapeString(trim($_POST['billing_start_date'] ?? ''));
     $monthly_fee = max(1, floatval($_POST['monthly_fee']));
     $pay_by_day  = max(1, min(31, intval($_POST['pay_by_day'] ?: 10)));
+    $reminders_enabled = isset($_POST['reminders_enabled']) ? 1 : 0;
 
     if ($id) {
         $db->exec("UPDATE customers SET name='$name',mobile='$mobile',building='$building',
             apartment='$apartment',room='$room',billing_day=$billing_day,
-            billing_start_date='$join_date',monthly_fee=$monthly_fee,pay_by_day=$pay_by_day WHERE id=$id");
+            billing_start_date='$join_date',monthly_fee=$monthly_fee,pay_by_day=$pay_by_day,
+            reminders_enabled=$reminders_enabled WHERE id=$id");
         logAction($db,$_SESSION['user_id'],'EDIT_CUSTOMER',"Updated customer ID $id");
     } else {
         $db->exec("INSERT INTO customers (name,mobile,building,apartment,room,billing_day,
-            billing_start_date,monthly_fee,pay_by_day,created_by,created_at)
+            billing_start_date,monthly_fee,pay_by_day,reminders_enabled,created_by,created_at)
             VALUES ('$name','$mobile','$building','$apartment','$room',
-            $billing_day,'$join_date',$monthly_fee,$pay_by_day,{$_SESSION['user_id']},datetime('now'))");
+            $billing_day,'$join_date',$monthly_fee,$pay_by_day,$reminders_enabled,{$_SESSION['user_id']},datetime('now'))");
         logAction($db,$_SESSION['user_id'],'ADD_CUSTOMER',"Added $name");
     }
     header('Location: portal.php?page=customers'); exit;
@@ -719,7 +742,7 @@ $total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status
 
 $pending_customers = [];
 if ($page === 'collections' || $page === 'dashboard') {
-    $all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee FROM customers WHERE status='active' ORDER BY name");
+    $all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee,COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE status='active' ORDER BY name");
     while ($c = $all_c->fetchArray(SQLITE3_ASSOC)) {
         $unpaid = getUnpaidMonths($db,$c['id'],$current_month);
         if (!empty($unpaid)) {
@@ -905,6 +928,107 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .cust-actions-wrap{display:inline-flex;gap:4px}
 .mobile-card-actions{display:inline-flex;gap:4px}
 .month-cb{width:18px;height:18px;cursor:pointer}
+
+/* Reminder Toggle Buttons & Badges */
+.btn-reminder-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all .2s ease;
+  border: 1px solid transparent;
+}
+.btn-reminder-toggle.is-active {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.btn-reminder-toggle.is-active:hover {
+  background: rgba(16, 185, 129, 0.22);
+}
+.btn-reminder-toggle.is-muted {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.btn-reminder-toggle.is-muted:hover {
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.badge-reminder-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .2s ease;
+  flex-shrink: 0;
+}
+.badge-reminder-pill.is-active {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.badge-reminder-pill.is-muted {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.btn-wa-muted {
+  opacity: 0.65 !important;
+  background: var(--surface2) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* Modal Switch Slider */
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #94a3b8;
+  transition: .25s;
+  border-radius: 24px;
+}
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .25s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.switch-toggle input:checked + .switch-slider {
+  background-color: #10b981;
+}
+.switch-toggle input:checked + .switch-slider:before {
+  transform: translateX(20px);
+}
+[data-theme="dark"] .switch-slider { background-color: #475569; }
 
 /* Universal rule for hidden rows across all tables & viewports */
 tr.row-hidden,
@@ -2010,6 +2134,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
       <?php else: $i=0; foreach($pending_customers as $p): $i++;
         $total_due=array_sum(array_column($p['unpaid'],'due'));
         $months_json=json_encode(array_map(fn($u)=>['month'=>$u['month'],'month_name'=>date('F Y',strtotime($u['month'].'-01')),'due'=>$u['due']],$p['unpaid']));
+        $rem_on = ((int)($p['reminders_enabled'] ?? 1) === 1);
       ?>
         <tr class="coll-card-tr" style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>" data-has-promise="<?= $p['promise'] ? '1' : '0' ?>" data-unpaid-count="<?= count($p['unpaid']) ?>" data-building="<?= htmlspecialchars($p['building'] ?? '') ?>" data-room="<?= htmlspecialchars($p['room'] ?? '') ?>">
           <td class="mono coll-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
@@ -2018,6 +2143,14 @@ a, button, input, select, textarea, .filter-pill, .btn {
               <div class="coll-name-left">
                 <span class="coll-rank-pill">#<?= $i ?></span>
                 <strong class="coll-cust-name"><?= htmlspecialchars($p['name']) ?></strong>
+                <button type="button" 
+                        class="badge-reminder-pill <?= $rem_on ? 'is-active' : 'is-muted' ?>" 
+                        onclick="toggleReminders(<?= $p['id'] ?>, this)" 
+                        id="rem-toggle-desk-<?= $p['id'] ?>"
+                        title="<?= $rem_on ? 'Reminders are Active. Tap to Mute' : 'Reminders are Muted. Tap to Enable' ?>">
+                  <i class="fas <?= $rem_on ? 'fa-bell' : 'fa-bell-slash' ?>"></i> 
+                  <span><?= $rem_on ? 'Active' : 'Muted' ?></span>
+                </button>
               </div>
               <span class="coll-mobile-due mono"><?= $total_due ?> SAR</span>
             </div>
@@ -2038,7 +2171,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
             <div class="mobile-card-actions">
               <button type="button" class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
               <button type="button" class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
-              <button type="button" class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
+              <button type="button" class="btn btn-xs <?= $rem_on ? 'btn-whatsapp' : 'btn-secondary btn-wa-muted' ?>" id="rem-wa-btn-<?= $p['id'] ?>" data-mobile="<?= $p['mobile'] ?>" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span class="mobile-action-label"><?= $rem_on ? 'WhatsApp' : 'Muted' ?></span></button>
             </div>
           </td>
         </tr>
@@ -2235,10 +2368,12 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
   </div>
   <div class="table-wrap responsive-cust-table">
     <table>
-      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected</th><th>WhatsApp</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected</th><th>Reminders</th><th>Actions</th></tr></thead>
       <tbody id="custTbody">
-      <?php $i=0;$custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
-      while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?>
+      <?php $i=0;$custs=$db->query("SELECT *, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE status='active' ORDER BY name");
+      while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;
+        $rem_on = ((int)$c['reminders_enabled'] === 1);
+      ?>
         <tr class="cust-card-tr" data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= htmlspecialchars($c['building'] ?? '') ?>" data-apt="<?= htmlspecialchars($c['apartment'] ?? '') ?>" data-r="<?= htmlspecialchars($c['room'] ?? '') ?>">
           <td class="mono cust-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
           <td class="cust-name-cell">
@@ -2246,6 +2381,14 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
               <div class="cust-name-left">
                 <span class="cust-rank-pill">#<?= $i ?></span>
                 <strong class="cust-card-name"><?= htmlspecialchars($c['name']) ?></strong>
+                <button type="button" 
+                        class="badge-reminder-pill <?= $rem_on ? 'is-active' : 'is-muted' ?>" 
+                        onclick="toggleReminders(<?= $c['id'] ?>, this)" 
+                        id="rem-toggle-mob-<?= $c['id'] ?>"
+                        title="<?= $rem_on ? 'Reminders are Active. Tap to Mute' : 'Reminders are Muted. Tap to Enable' ?>">
+                  <i class="fas <?= $rem_on ? 'fa-bell' : 'fa-bell-slash' ?>"></i> 
+                  <span><?= $rem_on ? 'Active' : 'Muted' ?></span>
+                </button>
               </div>
               <span class="badge badge-green mono cust-mobile-fee"><?= floatval($c['monthly_fee']?:30) ?> SAR</span>
             </div>
@@ -2263,11 +2406,24 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
               <span class="mono" style="font-size:12px"><i class="fas fa-calendar-day mobile-only-icon"></i><?= date('d M Y', strtotime($c['billing_start_date'])) ?></span>
             <?php endif; ?>
           </td>
-          <td class="cust-wa-cell"><button type="button" class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button></td>
+          <td class="cust-wa-cell" style="text-align:center">
+            <button type="button" 
+                    class="btn-reminder-toggle <?= $rem_on ? 'is-active' : 'is-muted' ?>" 
+                    onclick="toggleReminders(<?= $c['id'] ?>, this)" 
+                    id="rem-toggle-desk-<?= $c['id'] ?>"
+                    title="<?= $rem_on ? 'Reminders are Active. Click to Mute' : 'Reminders are Muted. Click to Enable' ?>">
+              <i class="fas <?= $rem_on ? 'fa-bell' : 'fa-bell-slash' ?>"></i> 
+              <span><?= $rem_on ? 'Active' : 'Muted' ?></span>
+            </button>
+          </td>
           <td class="cust-actions-cell" style="white-space:nowrap">
             <div class="cust-actions-wrap">
-              <button type="button" class="btn btn-whatsapp btn-xs cust-mob-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> WA</button>
-              <button type="button" class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>)"><i class="fas fa-edit"></i> Edit</button>
+              <button type="button" 
+                      class="btn btn-whatsapp btn-xs cust-mob-wa <?= !$rem_on ? 'btn-wa-muted' : '' ?>" 
+                      id="rem-wa-btn-<?= $c['id'] ?>" 
+                      data-mobile="<?= $c['mobile'] ?>"
+                      onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span><?= $rem_on ? 'WA' : 'Muted' ?></span></button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>,<?= $rem_on ? 1 : 0 ?>)"><i class="fas fa-edit"></i> Edit</button>
               <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
             </div>
           </td>
@@ -2332,6 +2488,19 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
           <label class="form-label"><i class="fas fa-plug" style="color:var(--info);margin-right:3px"></i> Date Connection Started <small style="font-weight:400;text-transform:none;color:var(--text-muted)">(actual installation date, e.g. 2025-04-25)</small></label>
           <input type="date" name="billing_start_date" id="cust_start" class="form-control" required style="font-size:13px;padding:8px 12px">
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fas fa-info-circle"></i> If joined after billing day, first bill automatically starts the following month.</div>
+        </div>
+
+        <div style="margin-bottom:18px;background:var(--surface2);padding:12px 14px;border-radius:10px;border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">
+              <i class="fab fa-whatsapp" style="color:#25D366"></i> WhatsApp Reminders
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Turn off to prevent this customer from receiving any automated or manual reminder messages.</div>
+          </div>
+          <label class="switch-toggle" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+            <input type="checkbox" name="reminders_enabled" id="cust_reminders_enabled" value="1" checked>
+            <span class="switch-slider"></span>
+          </label>
         </div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px">
@@ -2687,7 +2856,7 @@ usort($cust_rows, function($a, $b) {
 </div>
 <script>
 window._bcCustomers = <?php
-  $all_bc=$db->query("SELECT id,name,mobile FROM customers WHERE status='active'");
+  $all_bc=$db->query("SELECT id,name,mobile FROM customers WHERE status='active' AND COALESCE(reminders_enabled, 1)=1");
   $bc_arr=[];
   while($r=$all_bc->fetchArray(SQLITE3_ASSOC)) $bc_arr[]=$r;
   echo json_encode($bc_arr);
@@ -2919,10 +3088,11 @@ function clearCustForm(){
   const bd=document.getElementById('cust_billing_day');if(bd)bd.value='';
   const fee=document.getElementById('cust_fee');if(fee)fee.value='30';
   const pb=document.getElementById('cust_pay_by_day');if(pb)pb.value='10';
+  const rem=document.getElementById('cust_reminders_enabled');if(rem)rem.checked=true;
   const t=document.getElementById('custModalTitle');if(t)t.textContent='Add Customer';
 }
 
-function editCust(id,name,mobile,building,apartment,room,day,start,fee,payBy){
+function editCust(id,name,mobile,building,apartment,room,day,start,fee,payBy,remindersEnabled){
   document.getElementById('cust_id').value=id;
   document.getElementById('cust_name').value=name;
   document.getElementById('cust_building').value=building||'';
@@ -2933,6 +3103,8 @@ function editCust(id,name,mobile,building,apartment,room,day,start,fee,payBy){
   document.getElementById('cust_fee').value=fee||'30';
   const pb=document.getElementById('cust_pay_by_day');
   if(pb) pb.value=payBy||'10';
+  const rem=document.getElementById('cust_reminders_enabled');
+  if(rem) rem.checked = (remindersEnabled !== undefined ? (parseInt(remindersEnabled) === 1) : true);
 
   const ccSelect=document.getElementById('cust_country_code');
   const mobInput=document.getElementById('cust_mobile');
@@ -3102,7 +3274,7 @@ if(collSearch){
               <div style="flex:1;min-width:0;padding-right:12px">
                 <div style="font-weight:600;font-size:14px;color:var(--text);display:flex;align-items:center;gap:6px">
                   <span>${c.name}</span>
-                  <span class="badge badge-blue" style="font-size:10px">Day ${c.billing_day||'—'}</span>
+                  <span class="badge badge-blue" style="font-size:10px">Day ${c.billing_day||'—'}</span>${parseInt(c.reminders_enabled||1)===0 ? ' <span class="badge badge-yellow" style="font-size:10px"><i class="fas fa-bell-slash"></i> Muted</span>' : ''}
                 </div>
                 <div style="font-size:12px;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
                   <span class="mono" style="color:var(--accent)"><i class="fas fa-phone-alt" style="font-size:10px;margin-right:3px"></i>${c.mobile}</span>
@@ -3403,8 +3575,75 @@ function filterPendingTable() {
   }
 }
 
-function sendReminderSimple(mobile,name,custId,btnEl){
+function toggleReminders(cid, btnEl) {
+  if (!cid) return;
+  const btn = btnEl || event?.target?.closest('button');
+  const origHtml = btn ? btn.innerHTML : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  }
+  const fd = new FormData();
+  fd.append('action', 'toggle_reminders');
+  fd.append('customer_id', cid);
+
+  fetch('portal.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      if (btn) btn.disabled = false;
+      if (d.ok) {
+        const isEnabled = (parseInt(d.reminders_enabled) === 1);
+        const icon = isEnabled ? 'fa-bell' : 'fa-bell-slash';
+        const label = isEnabled ? 'Active' : 'Muted';
+        const addCls = isEnabled ? 'is-active' : 'is-muted';
+        const remCls = isEnabled ? 'is-muted' : 'is-active';
+
+        // Update all toggle badges for this customer (desktop & mobile)
+        document.querySelectorAll(`[id="rem-toggle-desk-${cid}"], [id="rem-toggle-mob-${cid}"]`).forEach(el => {
+          el.classList.remove(remCls);
+          el.classList.add(addCls);
+          el.innerHTML = `<i class="fas ${icon}"></i> <span>${label}</span>`;
+          el.title = isEnabled ? 'Reminders are Active. Click to Mute' : 'Reminders are Muted. Click to Enable';
+        });
+
+        // Update WhatsApp action buttons for this customer
+        document.querySelectorAll(`[id="rem-wa-btn-${cid}"]`).forEach(el => {
+          const mob = el.getAttribute('data-mobile') || '';
+          if (isEnabled) {
+            el.classList.remove('btn-wa-muted');
+            el.innerHTML = '<i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span>';
+            el.title = 'Send WhatsApp Reminder';
+            el.onclick = function() { sendReminderSimple(mob, d.name, cid, this, 1); };
+          } else {
+            el.classList.add('btn-wa-muted');
+            el.innerHTML = '<i class="fas fa-bell-slash"></i> <span class="mobile-action-label">Muted</span>';
+            el.title = 'Reminders are Muted';
+            el.onclick = function() { sendReminderSimple(mob, d.name, cid, this, 0); };
+          }
+        });
+
+        if (isEnabled) {
+          showToast(`🔔 Reminders enabled for ${d.name}`, 'success');
+        } else {
+          showToast(`🔕 Reminders muted for ${d.name} (no messages will be sent)`, 'success');
+        }
+      } else {
+        if (btn) btn.innerHTML = origHtml;
+        showToast('❌ ' + (d.error || 'Failed to update reminder status'), 'error');
+      }
+    })
+    .catch(() => {
+      if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+      showToast('❌ Network error - check connection', 'error');
+    });
+}
+
+function sendReminderSimple(mobile,name,custId,btnEl,remindersEnabled){
   if(!custId){showToast('Missing customer ID', 'error');return;}
+  if(remindersEnabled === 0){
+    showToast('🔕 Reminders are muted for '+name+'. Click the Muted button to turn on first.', 'error');
+    return;
+  }
   const btn = btnEl || event?.target?.closest('button');
   const origHtml = btn ? btn.innerHTML : null;
   if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
