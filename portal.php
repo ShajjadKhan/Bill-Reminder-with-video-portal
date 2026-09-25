@@ -976,6 +976,26 @@ tbody td{padding:10px 12px;vertical-align:middle}
 .mobile-card-actions{display:inline-flex;gap:4px}
 .month-cb{width:18px;height:18px;cursor:pointer}
 
+/* Payment & Billing History Modal Universal Styling */
+#histModal .modal-box {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25) !important;
+}
+#histModal table {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+#histModal table, #histModal td, #histModal th {
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+#histModal thead th {
+  background: var(--surface2) !important;
+  color: var(--text-muted) !important;
+}
+
 /* Reminder Toggle Buttons & Badges */
 .btn-reminder-toggle {
   display: inline-flex;
@@ -2656,15 +2676,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
     </div>
   </div>
 </div>
-<div class="modal-overlay" id="histModal">
-  <div class="modal-box" style="max-width:640px">
-    <div class="modal-header-custom">
-      <h5 id="histModalTitle"><i class="fas fa-history" style="color:var(--info)"></i> Payment History</h5>
-      <button class="modal-close" onclick="closeModal('histModal')">×</button>
-    </div>
-    <div class="modal-body-custom" id="histContent" style="padding:16px"></div>
-  </div>
-</div>
+
 
 
 
@@ -2785,7 +2797,7 @@ usort($cust_rows, function($a, $b) {
           <td class="bal-cust-cell">
             <div class="bal-mobile-top">
               <span class="bal-rank-pill">#<?= $idx ?></span>
-              <strong class="bal-cust-name"><?= htmlspecialchars($c["name"]) ?></strong>
+              <a href="javascript:void(0)" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" class="bal-cust-name-link" style="color:var(--text);text-decoration:none;font-weight:700;cursor:pointer" title="Click to view billing & transaction history"><?= htmlspecialchars($c["name"]) ?></a>
               <span class="badge <?= $status_color ?> bal-mobile-status"><?= $status ?></span>
             </div>
             <?php if (!empty($c["building"]) || !empty($c["room"])): ?>
@@ -2803,7 +2815,10 @@ usort($cust_rows, function($a, $b) {
           </td>
           <td class="mono bal-metric-cell bal-paid-cell">
             <span class="bal-metric-label">Paid</span>
-            <strong style="color:var(--success)"><?= number_format($bal["total_paid"], 2) ?> SAR</strong>
+            <a href="javascript:void(0)" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" style="color:var(--success);text-decoration:none;cursor:pointer" title="Click to view payment breakdown">
+              <strong style="color:var(--success)"><?= number_format($bal["total_paid"], 2) ?> SAR</strong>
+              <i class="fas fa-receipt" style="font-size:10px;opacity:.7;margin-left:3px"></i>
+            </a>
           </td>
           <td class="mono bal-metric-cell bal-bal-cell">
             <span class="bal-metric-label">Balance</span>
@@ -2818,7 +2833,7 @@ usort($cust_rows, function($a, $b) {
           <td class="bal-desktop-status"><span class="badge <?= $status_color ?>"><?= $status ?></span></td>
           <td class="bal-action-cell">
             <div class="bal-card-actions">
-              <button type="button" class="btn btn-secondary btn-xs" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" title="Payment History"><i class="fas fa-history"></i> <span class="mobile-action-label">History</span></button>
+              <button type="button" class="btn btn-secondary btn-xs bal-btn-hist" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" title="View Billing & Transaction History"><i class="fas fa-history"></i> History</button>
               <?php if ($bal["balance"] < 0): ?>
                 <button type="button" class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp Reminder</span></button>
                 <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
@@ -4025,6 +4040,16 @@ function filterBalance(query) {
 })();
 </script>
 <button id="btnScrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="btn-scroll-top" title="Scroll to top" aria-label="Scroll to top"><i class="fas fa-chevron-up"></i></button>
+<div class="modal-overlay" id="histModal">
+  <div class="modal-box" style="max-width:700px;width:95%">
+    <div class="modal-header-custom">
+      <h5 id="histModalTitle"><i class="fas fa-history" style="color:var(--info)"></i> Billing & Transaction History</h5>
+      <button type="button" class="modal-close" onclick="closeModal('histModal')">×</button>
+    </div>
+    <div class="modal-body-custom" id="histContent" style="padding:16px"></div>
+  </div>
+</div>
+
 <script>
 window.addEventListener('scroll', function() {
   const btn = document.getElementById('btnScrollTop');
