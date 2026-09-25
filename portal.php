@@ -1905,6 +1905,24 @@ a, button, input, select, textarea, .filter-pill, .btn {
   .mobile-only-icon { display: inline-block !important; opacity: 0.6 !important; font-size: 11px !important; margin-right: 4px !important; }
   .mobile-action-label { display: inline !important; }
 
+  /* Payment History Modal Dark Mode Contrast */
+  #histModal .modal-box {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+  }
+  #histModal table {
+    background: transparent !important;
+    color: var(--text) !important;
+  }
+  #histModal table, #histModal td, #histModal th {
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+  #histModal thead th {
+    background: var(--surface2) !important;
+    color: var(--text-muted) !important;
+  }
+
   /* Universal rule to ensure hidden rows stay hidden on mobile */
   tr.row-hidden,
   .row-hidden,
@@ -2639,12 +2657,12 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
   </div>
 </div>
 <div class="modal-overlay" id="histModal">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width:640px">
     <div class="modal-header-custom">
-      <h5><i class="fas fa-history" style="color:var(--info)"></i> Payment History</h5>
+      <h5 id="histModalTitle"><i class="fas fa-history" style="color:var(--info)"></i> Payment History</h5>
       <button class="modal-close" onclick="closeModal('histModal')">×</button>
     </div>
-    <div class="modal-body-custom" id="histContent"></div>
+    <div class="modal-body-custom" id="histContent" style="padding:16px"></div>
   </div>
 </div>
 
@@ -3447,7 +3465,16 @@ function openPromiseModal(cid,name,pid){
 }
 function openCollectModal(cid,name){document.getElementById('coll_cid').value=cid;document.getElementById('coll_name').textContent='Customer: '+name;document.getElementById('unpaidList').innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('collectModal');fetch('get_unpaid.php?cid='+cid).then(r=>r.json()).then(data=>{if(!data.length){document.getElementById('unpaidList').innerHTML='<div class="alert alert-success"><i class="fas fa-check-circle"></i> All bills are paid for this customer!</div>';document.getElementById('totalAmt').textContent='0';return;}let html='<div class="table-wrap"><table><thead><tr><th>✓ Settle</th><th>Month</th><th>Due</th><th>Amount Collected (SAR)</th></tr></thead><tbody>';data.forEach((m,i)=>{html+=`<tr><td><input type="checkbox" name="months[]" value="${m.month}" class="month-cb" checked onchange="updateTotal()" title="Check to settle this month"></td><td><strong>${new Date(m.month+'-02').toLocaleDateString('en',{year:'numeric',month:'long'})}</strong></td><td><span class="badge badge-red mono">${m.due} SAR</span></td><td><input type="number" name="amounts[]" class="form-control amt-input" value="${m.due}" min="0" step="0.5" style="width:120px" onchange="updateTotal()"></td></tr>`;});html+='</tbody></table></div>';document.getElementById('unpaidList').innerHTML=html;updateTotal();});}
 function updateTotal(){let total=0;document.querySelectorAll('.amt-input').forEach(inp=>{const row=inp.closest('tr');const cb=row?.querySelector('.month-cb');if(!cb||cb.checked)total+=parseFloat(inp.value)||0;});document.getElementById('totalAmt').textContent=total.toFixed(2);}
-function showHistory(cid,name){document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';openModal('histModal');fetch('get_history.php?cid='+cid).then(r=>r.text()).then(html=>{document.getElementById('histContent').innerHTML=html;});}
+function showHistory(cid,name){
+  const t = document.getElementById('histModalTitle');
+  if (t) t.innerHTML = '<i class="fas fa-history" style="color:var(--info)"></i> ' + (name ? name + ' — History' : 'Payment History');
+  document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:28px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin" style="margin-right:6px"></i> Loading payment records…</div>';
+  openModal('histModal');
+  fetch('get_history.php?cid='+cid)
+    .then(r=>r.text())
+    .then(html=>{document.getElementById('histContent').innerHTML=html;})
+    .catch(()=>{document.getElementById('histContent').innerHTML='<div style="padding:20px;text-align:center;color:var(--danger)">Failed to load payment history.</div>';});
+}
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
 function sendWaMsg(mobile,message){const cfg=getWaConfig();let phone=mobile.replace(/^0+/,'');if(!/^966/.test(phone))phone='966'+phone;const chatId=phone+'@c.us';const url=`${cfg.url}/api/sessions/${cfg.sid}/messages/send-text`;return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':cfg.key},body:JSON.stringify({chatId,text:message})});}
 
