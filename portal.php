@@ -1056,7 +1056,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
   }
   .btn-xs {
     min-height: 38px;
-    padding: 6px 12px;
+    padding: 6px 10px;
     font-size: 12px;
     gap: 4px;
     display: inline-flex;
@@ -1078,14 +1078,78 @@ a, button, input, select, textarea, .filter-pill, .btn {
   .card-body { padding: 12px; }
   .card-header { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
   
+  /* --- Dashboard Stat KPI Cards Grid (Aligned on iPhone XR / Mobile) --- */
   .stats-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 8px;
-    margin-bottom: 12px;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
   }
-  .stat-card { padding: 12px; border-radius: 10px; }
-  .stat-value { font-size: 20px; }
-  .stat-icon { width: 38px; height: 38px; font-size: 15px; }
+  .stat-card {
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    min-height: 72px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    box-sizing: border-box !important;
+  }
+  .stat-label {
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+  .stat-value {
+    font-size: 18px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 14px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Filter Month on Dashboard */
+  .filter-month-form {
+    display: flex !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  .filter-month-form select {
+    flex: 1 !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .filter-month-form button {
+    flex-shrink: 0 !important;
+  }
+
+  /* Staff Collections Table on Dashboard (Collector Names Always Visible!) */
+  .staff-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+  .staff-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    min-width: 320px;
+  }
+  .staff-table th, .staff-table td {
+    padding: 10px 8px !important;
+    font-size: 13px !important;
+    vertical-align: middle !important;
+  }
+  .staff-name {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
   
   .wa-grid { grid-template-columns: 1fr !important; }
   .advance-form { grid-template-columns: 1fr !important; }
@@ -1130,7 +1194,11 @@ a, button, input, select, textarea, .filter-pill, .btn {
   .login-wrap { padding: 14px; }
   .login-card { padding: 24px 18px; border-radius: 14px; }
 
-  /* Table horizontal scroll wrapper */
+  /* Disable Sticky Float Gradient on table-wrap */
+  .table-wrap::after {
+    display: none !important;
+    content: none !important;
+  }
   .table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -1162,120 +1230,276 @@ a, button, input, select, textarea, .filter-pill, .btn {
     flex-shrink: 0;
   }
 
-  /* Responsive Collections Card View */
+  /* Pending Filter Bar (Collections Page) */
+  .pending-filter-bar {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  .pending-filter-bar input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .pending-pills-bar {
+    display: flex !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+  .pending-pills-bar .filter-pill {
+    flex: 1 !important;
+    text-align: center !important;
+    justify-content: center !important;
+    min-height: 36px !important;
+    padding: 6px 4px !important;
+    font-size: 12px !important;
+  }
+
+  /* --- RESPONSIVE COLLECTIONS (PENDING BILLS) CARD VIEW --- */
   .responsive-coll-table table, 
   .responsive-coll-table thead, 
-  .responsive-coll-table tbody, 
-  .responsive-coll-table th, 
-  .responsive-coll-table td, 
-  .responsive-coll-table tr { display: block; }
-  .responsive-coll-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-coll-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+  .responsive-coll-table thead tr {
+    position: absolute !important;
+    top: -9999px !important;
+    left: -9999px !important;
+  }
   .responsive-coll-table tbody tr {
-    margin-bottom: 14px;
+    display: block !important;
+    width: 100% !important;
+    margin-bottom: 12px !important;
     background: var(--surface) !important;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04) !important;
+    box-sizing: border-box !important;
   }
   .responsive-coll-table tbody td {
-    border: none;
-    padding: 4px 0;
-    white-space: normal;
+    display: block !important;
+    border: none !important;
+    padding: 2px 0 !important;
+    white-space: normal !important;
+    box-sizing: border-box !important;
   }
-  .responsive-coll-table tbody td:first-child { display: none; }
-  .mobile-card-actions {
+  .responsive-coll-table .coll-idx-cell { display: none !important; }
+  .responsive-coll-table .coll-desktop-due { display: none !important; }
+
+  .coll-name-row {
     display: flex !important;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-    width: 100%;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+  }
+  .coll-name-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-width: 0 !important;
+    flex: 1 !important;
+  }
+  .coll-rank-pill {
+    display: inline-flex !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
+    background: var(--surface2) !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border) !important;
+    flex-shrink: 0 !important;
+  }
+  .coll-cust-name {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    word-break: break-word !important;
+    line-height: 1.25 !important;
+  }
+  .coll-mobile-due {
+    display: inline-flex !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    color: var(--danger) !important;
+    background: rgba(239,68,68,.08) !important;
+    border: 1px solid rgba(239,68,68,.18) !important;
+    padding: 3px 8px !important;
+    border-radius: 6px !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+  }
+  .coll-promise-wrap {
+    margin: 3px 0 5px 0 !important;
+  }
+  .coll-phone-link {
+    color: var(--accent) !important;
+    text-decoration: none !important;
+    font-weight: 600 !important;
+  }
+  .coll-unpaid-wrap {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+    margin: 6px 0 !important;
+    padding-top: 6px !important;
+    border-top: 1px dashed var(--border) !important;
+  }
+  .coll-unpaid-wrap .due-tag {
+    font-size: 11px !important;
+  }
+
+  /* 3 Action Buttons Equal Width Grid (iPhone XR Touch Friendly) */
+  .mobile-card-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 6px !important;
+    margin-top: 8px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid var(--border) !important;
+    width: 100% !important;
   }
   .mobile-card-actions .btn {
-    flex: 1;
-    min-height: 42px;
-    padding: 8px 6px;
-    font-size: 12px;
-    font-weight: 600;
-    justify-content: center;
+    min-height: 40px !important;
+    padding: 6px 4px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
-  /* Responsive Customers Card View */
+  /* --- RESPONSIVE CUSTOMERS DIRECTORY CARD VIEW --- */
   .responsive-cust-table table, 
   .responsive-cust-table thead, 
-  .responsive-cust-table tbody, 
-  .responsive-cust-table th, 
-  .responsive-cust-table td, 
-  .responsive-cust-table tr { display: block; }
-  .responsive-cust-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-cust-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+  .responsive-cust-table thead tr {
+    position: absolute !important;
+    top: -9999px !important;
+    left: -9999px !important;
+  }
   .responsive-cust-table tbody tr {
-    margin-bottom: 14px;
+    display: block !important;
+    width: 100% !important;
+    margin-bottom: 12px !important;
     background: var(--surface) !important;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 14px 12px 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04) !important;
+    box-sizing: border-box !important;
   }
   .responsive-cust-table tbody td {
-    border: none;
-    padding: 3px 0;
-    white-space: normal;
+    display: block !important;
+    border: none !important;
+    padding: 2px 0 !important;
+    white-space: normal !important;
+    box-sizing: border-box !important;
   }
-  .responsive-cust-table tbody td.cust-idx-cell { display: none; }
-  .responsive-cust-table .cust-card-title {
-    font-size: 16px;
-    font-weight: 700;
-  }
-  .responsive-cust-table .cust-hist-link {
-    display: inline-block;
-    margin-top: 2px;
-    font-size: 12px;
-  }
-  .responsive-cust-table .cust-wa-cell {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .responsive-cust-table .cust-wa-cell .btn-whatsapp {
-    width: 100%;
-    min-height: 42px;
-    font-size: 13px;
-    font-weight: 600;
-    justify-content: center;
-  }
-  .responsive-cust-table .cust-actions-cell {
-    margin-top: 6px;
-  }
-  .responsive-cust-table .cust-actions-wrap {
+  .responsive-cust-table .cust-idx-cell { display: none !important; }
+  .responsive-cust-table .cust-desktop-fee { display: none !important; }
+  .responsive-cust-table .cust-wa-cell { display: none !important; }
+
+  .cust-top-row {
     display: flex !important;
-    gap: 8px;
-    width: 100%;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    margin-bottom: 3px !important;
   }
-  .responsive-cust-table .cust-actions-wrap .btn {
-    flex: 1;
-    min-height: 42px;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 600;
+  .cust-name-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-width: 0 !important;
+    flex: 1 !important;
+  }
+  .cust-rank-pill {
+    display: inline-flex !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
+    background: var(--surface2) !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border) !important;
+    flex-shrink: 0 !important;
+  }
+  .cust-card-name {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    word-break: break-word !important;
+  }
+  .cust-mobile-fee {
+    display: inline-flex !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    flex-shrink: 0 !important;
+  }
+  .cust-phone-link {
+    color: var(--accent) !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+  }
+  .cust-actions-cell {
+    margin-top: 8px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid var(--border) !important;
+  }
+  .cust-actions-wrap {
+    display: grid !important;
+    grid-template-columns: 1.2fr 1fr 0.8fr !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+  .cust-actions-wrap .btn {
+    min-height: 40px !important;
+    padding: 6px 4px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .cust-mob-wa {
+    display: inline-flex !important;
   }
 
-  /* Responsive Balance Sheet Card View */
+  /* --- RESPONSIVE BALANCE SHEET CARD VIEW (3-Column Grid) --- */
   .responsive-bal-table table, 
   .responsive-bal-table thead, 
-  .responsive-bal-table tbody, 
-  .responsive-bal-table th, 
-  .responsive-bal-table td, 
-  .responsive-bal-table tr { display: block; }
-  .responsive-bal-table thead tr { position: absolute; top: -9999px; left: -9999px; }
-  
+  .responsive-bal-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+  .responsive-bal-table thead tr {
+    position: absolute !important;
+    top: -9999px !important;
+    left: -9999px !important;
+  }
   .responsive-bal-table tbody tr:not(.table-total) {
-    margin-bottom: 12px;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 6px !important;
+    margin-bottom: 12px !important;
     background: var(--surface) !important;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04) !important;
+    box-sizing: border-box !important;
   }
   .responsive-bal-table tbody tr[data-status="owing"] {
     border-left: 4px solid var(--danger) !important;
@@ -1287,262 +1511,233 @@ a, button, input, select, textarea, .filter-pill, .btn {
     border-left: 4px solid var(--success) !important;
   }
 
-  .responsive-bal-table tbody td {
-    border: none;
-    padding: 3px 0;
-    white-space: normal;
-  }
-  .responsive-bal-table tbody td.bal-idx-cell { display: none; }
-  .responsive-bal-table tbody td.bal-desktop-status { display: none; }
+  .responsive-bal-table .bal-idx-cell { display: none !important; }
+  .responsive-bal-table .bal-desktop-status { display: none !important; }
 
+  .responsive-bal-table .bal-cust-cell {
+    grid-column: 1 / -1 !important;
+    border: none !important;
+    padding: 0 !important;
+  }
   .bal-mobile-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-    width: 100%;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+    width: 100% !important;
   }
   .bal-rank-pill {
-    display: inline-flex;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 6px;
-    background: var(--surface2);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
+    display: inline-flex !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 2px 7px !important;
+    border-radius: 6px !important;
+    background: var(--surface2) !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border) !important;
+    flex-shrink: 0 !important;
   }
   .bal-cust-name {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-    flex: 1;
-    min-width: 0;
-    word-break: break-word;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    word-break: break-word !important;
   }
   .bal-mobile-status {
-    display: inline-flex;
-    font-size: 11px;
-    padding: 3px 8px;
-    font-weight: 700;
-    flex-shrink: 0;
+    display: inline-flex !important;
+    font-size: 11px !important;
+    padding: 3px 8px !important;
+    font-weight: 700 !important;
+    flex-shrink: 0 !important;
   }
   .bal-cust-addr {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 4px;
+    font-size: 12px !important;
+    color: var(--text-muted) !important;
+    margin-bottom: 4px !important;
   }
-  .bal-phone-cell {
-    font-size: 13px;
-    padding: 2px 0 8px 0 !important;
-    border-bottom: 1px dashed var(--border);
-    margin-bottom: 6px;
+  .responsive-bal-table .bal-phone-cell {
+    grid-column: 1 / -1 !important;
+    border: none !important;
+    border-bottom: 1px dashed var(--border) !important;
+    padding: 2px 0 6px 0 !important;
+    margin-bottom: 4px !important;
+    font-size: 13px !important;
   }
   .bal-phone-link {
     color: var(--accent) !important;
-    font-weight: 600;
+    font-weight: 600 !important;
   }
 
-  /* 3-Column Metrics Grid on Mobile */
-  .bal-metrics-wrap {
-    display: flex;
-    gap: 6px;
-    margin: 8px 0;
-  }
-  .responsive-bal-table tbody td.bal-metric-cell {
+  .responsive-bal-table .bal-metric-cell {
     display: flex !important;
-    flex-direction: column;
-    flex: 1;
-    background: var(--surface2);
+    flex-direction: column !important;
+    justify-content: center !important;
+    background: var(--surface2) !important;
     padding: 8px 4px !important;
-    border-radius: 8px;
-    text-align: center;
-    border: 1px solid rgba(0,0,0,.03);
+    border-radius: 8px !important;
+    text-align: center !important;
+    border: 1px solid var(--border) !important;
+    box-sizing: border-box !important;
   }
   .bal-metric-label {
-    display: block;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    color: var(--text-muted);
-    margin-bottom: 2px;
+    display: block !important;
+    font-size: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: .04em !important;
+    color: var(--text-muted) !important;
+    margin-bottom: 2px !important;
   }
   .bal-metric-cell strong {
-    font-size: 13px;
-    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    word-break: break-all !important;
   }
 
+  .responsive-bal-table .bal-owed-cell { grid-column: 1 !important; }
+  .responsive-bal-table .bal-paid-cell { grid-column: 2 !important; }
+  .responsive-bal-table .bal-bal-cell  { grid-column: 3 !important; }
+
+  .responsive-bal-table .bal-action-cell {
+    grid-column: 1 / -1 !important;
+    border: none !important;
+    padding: 0 !important;
+    margin-top: 4px !important;
+  }
   .bal-card-actions {
-    display: flex !important;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-    width: 100%;
+    display: grid !important;
+    grid-template-columns: 2fr 1fr !important;
+    gap: 6px !important;
+    margin-top: 6px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--border) !important;
+    width: 100% !important;
   }
-  .bal-card-actions .bal-btn-wa {
-    flex: 2;
-    min-height: 42px;
-    font-size: 13px;
-    font-weight: 600;
-    justify-content: center;
-  }
-  .bal-card-actions .bal-btn-call {
+  .bal-card-actions .bal-btn-wa, .bal-card-actions .bal-btn-call {
+    min-height: 40px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
     display: inline-flex !important;
-    flex: 1;
-    min-height: 42px;
-    font-size: 13px;
-    font-weight: 600;
-    justify-content: center;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   /* Table Total Card on Mobile */
   .responsive-bal-table tbody tr.table-total {
-    margin-top: 16px;
+    margin-top: 16px !important;
     background: var(--surface2) !important;
-    border: 2px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-    display: block;
+    border: 2px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    display: block !important;
   }
   .responsive-bal-table tbody tr.table-total td {
-    display: block;
-    padding: 4px 0;
-    border: none;
+    display: block !important;
+    padding: 4px 0 !important;
+    border: none !important;
   }
   .responsive-bal-table tbody tr.table-total td:first-child {
-    font-size: 15px;
-    font-weight: 700;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 8px;
-    margin-bottom: 6px;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 6px !important;
   }
 
   /* Responsive Vacation Holds Card View */
   .responsive-vac-table table, 
   .responsive-vac-table thead, 
-  .responsive-vac-table tbody, 
-  .responsive-vac-table th, 
-  .responsive-vac-table td, 
-  .responsive-vac-table tr { display: block; }
-  .responsive-vac-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+  .responsive-vac-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+  .responsive-vac-table thead tr {
+    position: absolute !important;
+    top: -9999px !important;
+    left: -9999px !important;
+  }
   .responsive-vac-table tbody tr {
-    margin-bottom: 12px;
+    display: block !important;
+    margin-bottom: 12px !important;
     background: var(--surface) !important;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+    border: 1px solid var(--border) !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04) !important;
   }
   .responsive-vac-table tbody td {
-    border: none;
-    padding: 3px 0;
-    white-space: normal;
+    display: block !important;
+    border: none !important;
+    padding: 3px 0 !important;
+    white-space: normal !important;
   }
-  .responsive-vac-table tbody td:first-child { display: none; }
+  .responsive-vac-table tbody td:first-child { display: none !important; }
   .vac-metric-label {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    margin-right: 6px;
+    display: inline-block !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: var(--text-muted) !important;
+    text-transform: uppercase !important;
+    margin-right: 6px !important;
   }
   .vac-card-actions {
     display: flex !important;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-    width: 100%;
+    gap: 8px !important;
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid var(--border) !important;
+    width: 100% !important;
   }
   .vac-card-actions form {
     display: flex !important;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    width: 100% !important;
   }
   .vac-card-actions input[type=date] {
-    flex: 1;
-    min-height: 40px;
+    flex: 1 !important;
+    min-height: 40px !important;
   }
   .vac-card-actions .btn {
-    min-height: 40px;
-    justify-content: center;
-    font-weight: 600;
+    min-height: 40px !important;
+    justify-content: center !important;
+    font-weight: 600 !important;
   }
 
-  /* Responsive Report Card View */
-  .responsive-report-table table, 
-  .responsive-report-table thead, 
-  .responsive-report-table tbody, 
-  .responsive-report-table th, 
-  .responsive-report-table td, 
-  .responsive-report-table tr { display: block; }
-  .responsive-report-table thead tr { position: absolute; top: -9999px; left: -9999px; }
-  .responsive-report-table tbody tr {
-    margin-bottom: 12px;
-    background: var(--surface) !important;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  /* Live Search Dropdown on Mobile */
+  .search-result-item {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
   }
-  .responsive-report-table tbody td {
-    border: none;
-    padding: 3px 0;
-    white-space: normal;
+  .search-result-item > div:last-child {
+    display: grid !important;
+    grid-template-columns: 1fr 44px !important;
+    width: 100% !important;
   }
-  .responsive-report-table tbody td:first-child { display: none; }
-  .report-metric-label {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    margin-right: 6px;
-  }
-  .report-card-actions {
-    display: flex !important;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-    width: 100%;
-    align-items: center;
-  }
-  .report-card-actions form {
-    display: flex !important;
-    gap: 6px;
-    align-items: center;
-  }
-  .report-card-actions input[type=number] {
-    width: 100px !important;
-    min-height: 38px;
-  }
-  .report-card-actions .btn {
-    min-height: 38px;
-    padding: 6px 12px;
+  .search-result-item > div:last-child .btn {
+    min-height: 40px !important;
+    justify-content: center !important;
   }
 
-  .mobile-only-icon { display: inline-block; opacity: 0.6; font-size: 11px; margin-right: 4px; }
-  .mobile-action-label { display: inline; }
+  .mobile-only-icon { display: inline-block !important; opacity: 0.6 !important; font-size: 11px !important; margin-right: 4px !important; }
+  .mobile-action-label { display: inline !important; }
 }
 
 /* Small Smartphone Refinements (max-width: 480px) */
 @media(max-width: 480px) {
-  .stats-grid {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 6px !important;
-  }
-  .stat-card { padding: 10px; }
-  .stat-label { font-size: 10px; }
-  .stat-value { font-size: 18px; }
   .topbar-brand .brand-name { font-size: 14px; }
   .card-header-title { font-size: 13px; }
-  table { font-size: 11px; }
-  thead th, tbody td { padding: 6px 5px; }
-  .due-tag { font-size: 10px; }
+}
+
+/* Desktop styles for rank pills & mobile due tags */
+@media (min-width: 769px) {
+  .coll-rank-pill, .coll-mobile-due { display: none !important; }
+  .cust-rank-pill, .cust-mobile-fee, .cust-mob-wa { display: none !important; }
+  .mobile-only-icon { display: none !important; }
 }
 </style>
 </head>
@@ -1653,9 +1848,9 @@ a, button, input, select, textarea, .filter-pill, .btn {
 <div class="card">
   <div class="card-header"><div class="card-header-title"><i class="fas fa-calendar-alt"></i> Filter Month</div></div>
   <div class="card-body">
-    <form method="get" style="display:flex;gap:10px;align-items:center">
+    <form method="get" class="filter-month-form" style="display:flex;gap:10px;align-items:center">
       <input type="hidden" name="page" value="dashboard">
-      <select name="stats_month" class="form-select" style="width:200px">
+      <select name="stats_month" class="form-select" style="max-width:240px">
         <?php for($i=0;$i<12;$i++){$m=date('Y-m',strtotime("-$i months"));$sel=($m==$display_month)?'selected':'';echo "<option value=\"$m\" $sel>".date('F Y',strtotime($m))."</option>";}?>
       </select>
       <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Show</button>
@@ -1664,20 +1859,20 @@ a, button, input, select, textarea, .filter-pill, .btn {
 </div>
 <div class="card">
   <div class="card-header"><div class="card-header-title"><i class="fas fa-users"></i> Collections by Staff — <?= date("F Y",strtotime($display_month)) ?></div></div>
-  <div class="table-wrap responsive-report-table">
-    <table>
-      <thead><tr><th>Staff Name</th><th>Collections</th><th style="text-align:right">Total Collected</th><th style="text-align:right">Avg per Record</th></tr></thead>
+  <div class="table-wrap staff-table-wrap">
+    <table class="staff-table">
+      <thead><tr><th>Collector Name</th><th style="text-align:center">Records</th><th style="text-align:right">Total Collected</th><th style="text-align:right">Avg / Record</th></tr></thead>
       <tbody>
       <?php $staff=$db->query("SELECT id,fullname FROM users ORDER BY fullname");$gt=0;$gc=0;
       while($s=$staff->fetchArray(SQLITE3_ASSOC)){
-        $t=$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND collected_by={$s['id']}");
-        $cnt=$db->querySingle("SELECT COUNT(*) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND collected_by={$s['id']}");
+        $t=(float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND collected_by={$s['id']}");
+        $cnt=(int)$db->querySingle("SELECT COUNT(*) FROM collections WHERE strftime('%Y-%m',collected_date)='$display_month' AND collected_by={$s['id']}");
         $avg=$cnt>0?round($t/$cnt,2):0;$gt+=$t;$gc+=$cnt;
-        echo "<tr><td><strong>".htmlspecialchars($s['fullname'])."</strong></td><td><span class='badge badge-blue'>$cnt</span></td><td style='text-align:right'><span class='mono' style='color:var(--success)'>$t SAR</span></td><td style='text-align:right'><span class='mono'>$avg SAR</span></td></tr>";
+        echo "<tr><td><strong class='staff-name'><i class='fas fa-user-circle' style='color:var(--accent);margin-right:6px'></i>".htmlspecialchars($s['fullname'])."</strong></td><td style='text-align:center'><span class='badge badge-blue'>$cnt</span></td><td style='text-align:right'><span class='mono' style='color:var(--success);font-weight:700'>".number_format($t,2)." SAR</span></td><td style='text-align:right'><span class='mono'>".number_format($avg,2)." SAR</span></td></tr>";
       }?>
       <tr style="background:var(--surface2);font-weight:700">
-        <td>TOTAL</td><td><span class="badge badge-gray"><?= $gc ?></span></td>
-        <td style="text-align:right"><span class="mono" style="color:var(--accent)"><?= number_format($gt,2) ?> SAR</span></td>
+        <td><strong class='staff-name'><i class='fas fa-calculator' style='margin-right:6px'></i>TOTAL</strong></td><td style='text-align:center'><span class="badge badge-gray"><?= $gc ?></span></td>
+        <td style="text-align:right"><span class="mono" style="color:var(--accent);font-weight:700"><?= number_format($gt,2) ?> SAR</span></td>
         <td style="text-align:right"><span class="mono"><?= $gc>0?number_format($gt/$gc,2):0 ?> SAR</span></td>
       </tr>
       </tbody>
@@ -1747,9 +1942,9 @@ a, button, input, select, textarea, .filter-pill, .btn {
     <span class="badge badge-red" id="pendingBadgeCount"><?= count($pending_customers) ?> customers</span>
   </div>
   <div style="padding: 12px 14px 4px 14px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <div class="pending-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <input type="text" id="pendingFilterInput" class="form-control" placeholder="🔍 Search pending (name, mobile, building, room)..." style="flex:1;min-width:200px;font-size:13px" oninput="filterPendingTable()">
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <div class="pending-pills-bar" style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="filter-pill active" onclick="setPendingFilter('all', this)">All</button>
         <button type="button" class="filter-pill" onclick="setPendingFilter('promise', this)">🤝 Promised</button>
         <button type="button" class="filter-pill" onclick="setPendingFilter('multi', this)">⚠️ 2+ Months</button>
@@ -1766,24 +1961,34 @@ a, button, input, select, textarea, .filter-pill, .btn {
         $total_due=array_sum(array_column($p['unpaid'],'due'));
         $months_json=json_encode(array_map(fn($u)=>['month'=>$u['month'],'month_name'=>date('F Y',strtotime($u['month'].'-01')),'due'=>$u['due']],$p['unpaid']));
       ?>
-        <tr style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>" data-has-promise="<?= $p['promise'] ? '1' : '0' ?>" data-unpaid-count="<?= count($p['unpaid']) ?>" data-building="<?= htmlspecialchars($p['building'] ?? '') ?>" data-room="<?= htmlspecialchars($p['room'] ?? '') ?>">
-          <td class="mono" style="color:var(--text-muted)"><?= $i ?></td>
-          <td>
-            <strong><?= htmlspecialchars($p['name']) ?></strong>
+        <tr class="coll-card-tr" style="<?= $p['promise'] ? 'background:rgba(245,158,11,.06)' : '' ?>" data-has-promise="<?= $p['promise'] ? '1' : '0' ?>" data-unpaid-count="<?= count($p['unpaid']) ?>" data-building="<?= htmlspecialchars($p['building'] ?? '') ?>" data-room="<?= htmlspecialchars($p['room'] ?? '') ?>">
+          <td class="mono coll-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
+          <td class="coll-name-cell">
+            <div class="coll-name-row">
+              <div class="coll-name-left">
+                <span class="coll-rank-pill">#<?= $i ?></span>
+                <strong class="coll-cust-name"><?= htmlspecialchars($p['name']) ?></strong>
+              </div>
+              <span class="coll-mobile-due mono"><?= $total_due ?> SAR</span>
+            </div>
             <?php if($p['promise']): ?>
-            <br><span class="badge badge-yellow" style="margin-top:3px;font-size:10px">🤝 Pay by <?= $p['promise']['promise_date'] ?><?= $p['promise']['note'] ? ' — '.htmlspecialchars($p['promise']['note']) : '' ?></span>
+            <div class="coll-promise-wrap"><span class="badge badge-yellow" style="font-size:10px">🤝 Pay by <?= $p['promise']['promise_date'] ?><?= $p['promise']['note'] ? ' — '.htmlspecialchars($p['promise']['note']) : '' ?></span></div>
             <?php endif; ?>
           </td>
-          <td class="mono"><a href="tel:<?= $p['mobile'] ?>" style="color:inherit;text-decoration:none"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $p['mobile'] ?></a></td>
-          <td><span class="badge badge-blue">Day <?= $p['billing_day'] ?></span></td>
-          <td style="color:var(--text-muted);font-size:12px"><?= $p['building'].' '.$p['apartment'].' R'.$p['room'] ?></td>
-          <td><?php foreach($p['unpaid'] as $u): ?><div style="font-size:12px"><span class="due-tag"><?= date('M Y',strtotime($u['month'].'-01')).' — '.$u['due'].' SAR' ?></span></div><?php endforeach; ?></td>
-          <td><strong style="color:var(--danger);font-family:'IBM Plex Mono'"><?= $total_due ?> SAR</strong></td>
-          <td style="white-space:nowrap">
+          <td class="mono coll-phone-cell"><a href="tel:<?= $p['mobile'] ?>" class="coll-phone-link"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $p['mobile'] ?></a></td>
+          <td class="coll-bday-cell"><span class="badge badge-blue">Day <?= $p['billing_day'] ?></span></td>
+          <td class="coll-addr-cell" style="color:var(--text-muted);font-size:12px"><i class="fas fa-map-marker-alt mobile-only-icon"></i><?= $p['building'].' '.$p['apartment'].' R'.$p['room'] ?></td>
+          <td class="coll-unpaid-cell">
+            <div class="coll-unpaid-wrap">
+              <?php foreach($p['unpaid'] as $u): ?><span class="due-tag"><?= date('M Y',strtotime($u['month'].'-01')).' — '.$u['due'].' SAR' ?></span><?php endforeach; ?>
+            </div>
+          </td>
+          <td class="coll-desktop-due"><strong style="color:var(--danger);font-family:'IBM Plex Mono'"><?= $total_due ?> SAR</strong></td>
+          <td class="coll-actions-cell" style="white-space:nowrap">
             <div class="mobile-card-actions">
-              <button class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
-              <button class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
-              <button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
+              <button type="button" class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
+              <button type="button" class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
+              <button type="button" class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button>
             </div>
           </td>
         </tr>
@@ -1984,28 +2189,35 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
       <tbody id="custTbody">
       <?php $i=0;$custs=$db->query("SELECT * FROM customers WHERE status='active' ORDER BY name");
       while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;?>
-        <tr data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= htmlspecialchars($c['building'] ?? '') ?>" data-apt="<?= htmlspecialchars($c['apartment'] ?? '') ?>" data-r="<?= htmlspecialchars($c['room'] ?? '') ?>">
+        <tr class="cust-card-tr" data-n="<?= htmlspecialchars($c['name']) ?>" data-m="<?= $c['mobile'] ?>" data-b="<?= htmlspecialchars($c['building'] ?? '') ?>" data-apt="<?= htmlspecialchars($c['apartment'] ?? '') ?>" data-r="<?= htmlspecialchars($c['room'] ?? '') ?>">
           <td class="mono cust-idx-cell" style="color:var(--text-muted)"><?= $i ?></td>
-          <td>
-            <div class="cust-card-title"><strong><?= htmlspecialchars($c['name']) ?></strong></div>
+          <td class="cust-name-cell">
+            <div class="cust-top-row">
+              <div class="cust-name-left">
+                <span class="cust-rank-pill">#<?= $i ?></span>
+                <strong class="cust-card-name"><?= htmlspecialchars($c['name']) ?></strong>
+              </div>
+              <span class="badge badge-green mono cust-mobile-fee"><?= floatval($c['monthly_fee']?:30) ?> SAR</span>
+            </div>
             <a href="#" class="cust-hist-link" style="font-size:11px;color:var(--accent)" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')"><i class="fas fa-history"></i> History</a>
           </td>
-          <td class="mono"><a href="tel:<?= $c['mobile'] ?>" style="color:inherit;text-decoration:none"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $c['mobile'] ?></a></td>
-          <td style="color:var(--text-muted);font-size:12px"><i class="fas fa-map-marker-alt mobile-only-icon"></i><?= trim($c['building'].' '.$c['apartment'].' R'.$c['room']) ?></td>
-          <td><span class="badge badge-blue">Day <?= $c['billing_day'] ?></span></td>
-          <td><span class="badge badge-purple">Pay By <?= intval($c['pay_by_day'] ?: 10) ?></span></td>
-          <td><span class="badge badge-green mono"><?= floatval($c['monthly_fee']?:30) ?> SAR</span></td>
-          <td>
+          <td class="mono cust-phone-cell"><a href="tel:<?= $c['mobile'] ?>" class="cust-phone-link"><i class="fas fa-phone-alt mobile-only-icon"></i><?= $c['mobile'] ?></a></td>
+          <td class="cust-addr-cell" style="color:var(--text-muted);font-size:12px"><i class="fas fa-map-marker-alt mobile-only-icon"></i><?= trim($c['building'].' '.$c['apartment'].' R'.$c['room']) ?></td>
+          <td class="cust-bday-cell"><span class="badge badge-blue">Day <?= $c['billing_day'] ?></span></td>
+          <td class="cust-payby-cell"><span class="badge badge-purple">Pay By <?= intval($c['pay_by_day'] ?: 10) ?></span></td>
+          <td class="cust-desktop-fee"><span class="badge badge-green mono"><?= floatval($c['monthly_fee']?:30) ?> SAR</span></td>
+          <td class="cust-start-cell">
             <?php if (empty($c['billing_start_date'])): ?>
               <span class="badge badge-red" title="Missing connection date - billing will be wrong!"><i class="fas fa-triangle-exclamation"></i> MISSING</span>
             <?php else: ?>
               <span class="mono" style="font-size:12px"><i class="fas fa-calendar-day mobile-only-icon"></i><?= date('d M Y', strtotime($c['billing_start_date'])) ?></span>
             <?php endif; ?>
           </td>
-          <td class="cust-wa-cell"><button class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button></td>
+          <td class="cust-wa-cell"><button type="button" class="btn btn-whatsapp btn-xs" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span></button></td>
           <td class="cust-actions-cell" style="white-space:nowrap">
             <div class="cust-actions-wrap">
-              <button class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>)"><i class="fas fa-edit"></i> Edit</button>
+              <button type="button" class="btn btn-whatsapp btn-xs cust-mob-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)"><i class="fab fa-whatsapp"></i> WA</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>)"><i class="fas fa-edit"></i> Edit</button>
               <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
             </div>
           </td>
