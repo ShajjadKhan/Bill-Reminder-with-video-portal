@@ -57,7 +57,7 @@ $where_sql = implode(' AND ', $where_clauses);
 $clean_all = str_replace(['%', '_'], '', $raw_q);
 $digits_all = preg_replace('/\D/', '', $raw_q);
 
-$sql = "SELECT id, name, mobile, building, apartment, room, billing_day, billing_start_date, monthly_fee, status, COALESCE(reminders_enabled, 1) as reminders_enabled
+$sql = "SELECT id, name, mobile, building, apartment, room, billing_day, billing_start_date, monthly_fee, status, COALESCE(reminders_enabled, 1) as reminders_enabled, (SELECT COUNT(*) FROM vacation_holds vh WHERE vh.customer_id = customers.id AND vh.hold_start <= date('now') AND (vh.hold_end IS NULL OR vh.hold_end >= date('now'))) as is_on_vacation
         FROM customers
         WHERE $where_sql
         ORDER BY 

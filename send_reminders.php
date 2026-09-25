@@ -45,10 +45,11 @@ while ($c = $customers->fetchArray(SQLITE3_ASSOC)) {
     $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$cid");
     while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
         $vs = new DateTime($h['hold_start']);
-        $ve = $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'));
+        $ve = $h['hold_end'] ? new DateTime($h['hold_end']) : null;
         $vholds[] = ['s' => $vs, 'e' => $ve];
-        if (!$h['hold_end'] && $today_dt >= $vs) {
+        if ($today_dt >= $vs && ($ve === null || $today_dt <= $ve)) {
             $on_vacation_now = true;
+            break;
         }
     }
     if ($on_vacation_now) {

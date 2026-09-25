@@ -123,6 +123,20 @@ if (isLoggedIn() && isAdmin() && $action === 'resume_hold') {
     }
     header('Location: portal.php?page=vacations'); exit;
 }
+if (isLoggedIn() && isAdmin() && $action === 'edit_hold') {
+    $hid = intval($_POST['hold_id'] ?? 0);
+    $start = trim($_POST['hold_start'] ?? '');
+    $end = trim($_POST['hold_end'] ?? '');
+    $reason = SQLite3::escapeString(trim($_POST['reason'] ?? 'Vacation'));
+    if ($hid && $start) {
+        $start_esc = SQLite3::escapeString($start);
+        $end_val = $end ? "'" . SQLite3::escapeString($end) . "'" : 'NULL';
+        $db->exec("UPDATE vacation_holds SET hold_start='$start_esc', hold_end=$end_val, reason='$reason' WHERE id=$hid");
+        logAction($db, $_SESSION['user_id'], 'EDIT_HOLD', "Updated vacation hold ID $hid ($start to " . ($end ?: 'ongoing') . ")");
+        $_SESSION['msg'] = "Vacation hold updated successfully";
+    }
+    header('Location: portal.php?page=vacations'); exit;
+}
 if (isLoggedIn() && isAdmin() && $action === 'delete_hold') {
     $hid = intval($_POST['hold_id'] ?? 0);
     if ($hid) {
@@ -161,6 +175,13 @@ if ($action === 'send_manual_reminder' && isLoggedIn()) {
 
     if ((int)$cust['reminders_enabled'] === 0) {
         echo json_encode(['ok'=>false, 'error'=>"WhatsApp reminders are muted for {$cust['name']} upon request."]);
+        exit;
+    }
+
+    // Check if customer is currently away on vacation hold
+    $is_vac = $db->querySingle("SELECT COUNT(*) FROM vacation_holds WHERE customer_id=$cid AND hold_start <= date('now') AND (hold_end IS NULL OR hold_end >= date('now'))");
+    if ($is_vac > 0) {
+        echo json_encode(['ok'=>false, 'error'=>"{$cust['name']} is currently away on vacation hold. Reminders cannot be sent."]);
         exit;
     }
 
@@ -441,8 +462,30 @@ if (isLoggedIn() && isAdmin() && $action === 'add_collection_partial') {
         if ($amt >= 0) {
             $prev_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount),0) FROM collections WHERE customer_id=$customer_id AND month_year='$month'");
             $total_month_paid = $prev_paid + $amt;
-            // Mark settled only if total payments for this month reach the fee OR amount entered is 0 (explicit waiver)
-            $is_settled = ($total_month_paid >= $cust_fee || $amt == 0) ? 1 : 0;
+
+            // Calculate effective month fee taking vacation into account
+            $dim = (int)date('t', strtotime($month . '-01'));
+            $vholds = [];
+            $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=$customer_id");
+            while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
+                $vholds[] = ['s' => new DateTime($h['hold_start']), 'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : null];
+            }
+            $mStart = new DateTime($month . '-01');
+            $mEnd   = clone $mStart; $mEnd->modify('last day of this month');
+            $billable = 0; $d = clone $mStart;
+            while ($d <= $mEnd) {
+                $in_hold = false;
+                foreach ($vholds as $vh) {
+                    if ($vh['e'] === null) { if ($d >= $vh['s']) { $in_hold = true; break; } }
+                    else { if ($d >= $vh['s'] && $d <= $vh['e']) { $in_hold = true; break; } }
+                }
+                if (!$in_hold) $billable++;
+                $d->modify('+1 day');
+            }
+            $effective_fee = ($billable == 0) ? 0 : round($cust_fee * $billable / $dim, 2);
+
+            // Mark settled if total payments for this month reach effective pro-rated fee OR amount entered is 0 (explicit waiver)
+            $is_settled = ($total_month_paid >= ($effective_fee - 0.05) || $amt == 0) ? 1 : 0;
 
             $db->exec("INSERT INTO collections (customer_id,month_year,amount,collected_by,collected_date,is_settled)
                 VALUES ($customer_id,'$month',$amt,{$_SESSION['user_id']},datetime('now'),$is_settled)");
@@ -746,7 +789,7 @@ $total_customers = $db->querySingle("SELECT COUNT(*) FROM customers WHERE status
 
 $pending_customers = [];
 if ($page === 'collections' || $page === 'dashboard') {
-    $all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee,COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE status='active' ORDER BY name");
+    $all_c = $db->query("SELECT id,name,mobile,building,apartment,room,billing_day,billing_start_date,monthly_fee,COALESCE(reminders_enabled, 1) as reminders_enabled, (SELECT COUNT(*) FROM vacation_holds vh WHERE vh.customer_id = customers.id AND vh.hold_start <= date('now') AND (vh.hold_end IS NULL OR vh.hold_end >= date('now'))) as is_on_vacation FROM customers WHERE status='active' ORDER BY name");
     while ($c = $all_c->fetchArray(SQLITE3_ASSOC)) {
         $unpaid = getUnpaidMonths($db,$c['id'],$current_month);
         if (!empty($unpaid)) {
@@ -2146,7 +2189,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
             <div class="coll-name-row">
               <div class="coll-name-left">
                 <span class="coll-rank-pill">#<?= $i ?></span>
-                <strong class="coll-cust-name"><?= htmlspecialchars($p['name']) ?></strong>
+                <strong class="coll-cust-name"><?= htmlspecialchars($p['name']) ?></strong><?php if(!empty($p['is_on_vacation'])): ?><span class="badge badge-yellow" style="font-size:10px;padding:2px 6px;vertical-align:middle;margin-left:4px" title="Customer is currently on vacation hold"><i class="fas fa-umbrella-beach"></i> Away</span><?php endif; ?>
                 <button type="button" 
                         class="badge-reminder-pill <?= $rem_on ? 'is-active' : 'is-muted' ?>" 
                         onclick="toggleReminders(<?= $p['id'] ?>, this)" 
@@ -2202,6 +2245,51 @@ a, button, input, select, textarea, .filter-pill, .btn {
           <span>Total to collect: <strong class="mono" id="totalAmt">0</strong> SAR</span>
         </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Record Payment</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Vacation Hold Modal -->
+<div class="modal-overlay" id="editHoldModal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-header-custom">
+      <h5><i class="fas fa-edit" style="color:var(--accent)"></i> <span id="editHoldTitle">Edit Vacation Hold</span></h5>
+      <button class="modal-close" onclick="closeModal('editHoldModal')">×</button>
+    </div>
+    <div class="modal-body-custom">
+      <form method="post" id="editHoldForm">
+        <input type="hidden" name="action" value="edit_hold">
+        <input type="hidden" name="hold_id" id="edit_hold_id">
+
+        <div style="margin-bottom:14px">
+          <label class="form-label"><i class="fas fa-user" style="color:var(--accent);margin-right:4px"></i> Customer</label>
+          <input type="text" id="edit_hold_cust_name" class="form-control" readonly style="background:var(--surface2);font-weight:600">
+        </div>
+
+        <div style="margin-bottom:14px">
+          <label class="form-label"><i class="fas fa-plane-departure" style="color:var(--accent);margin-right:4px"></i> Departure Date (Start)</label>
+          <input type="date" name="hold_start" id="edit_hold_start" class="form-control" required style="font-size:14px">
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <label class="form-label" style="margin-bottom:0"><i class="fas fa-plane-arrival" style="color:var(--success);margin-right:4px"></i> Return Date</label>
+            <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('edit_hold_end').value=''" style="font-size:10px;padding:2px 6px">Clear (Ongoing)</button>
+          </div>
+          <input type="date" name="hold_end" id="edit_hold_end" class="form-control" style="font-size:14px">
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Leave blank if return date is still unknown / ongoing.</div>
+        </div>
+
+        <div style="margin-bottom:18px">
+          <label class="form-label"><i class="fas fa-comment-alt" style="color:var(--text-muted);margin-right:4px"></i> Reason / Notes</label>
+          <input type="text" name="reason" id="edit_hold_reason" class="form-control" placeholder="e.g. Vacation to Bangladesh">
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('editHoldModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2305,7 +2393,17 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
             $is_away = (!$h['hold_end'] || $h['hold_end'] >= date('Y-m-d'));
             $days_away = (new DateTime())->diff(new DateTime($h['hold_start']))->days;
         ?>
-        <tr style="<?= $is_away ? 'background:rgba(245,158,11,.05)' : '' ?>">
+        <?php 
+            $hold_start_dt = new DateTime($h['hold_start']);
+            $hold_end_dt = $h['hold_end'] ? new DateTime($h['hold_end']) : null;
+            $today_ref = new DateTime(date('Y-m-d'));
+            if ($hold_end_dt) {
+                $calc_days = $hold_start_dt->diff($hold_end_dt)->days + 1;
+            } else {
+                $calc_days = max(1, $hold_start_dt->diff($today_ref)->days + 1);
+            }
+        ?>
+        <tr style="<?= $is_away ? 'background:rgba(245,158,11,.05)' : '' ?>" class="vac-row-tr">
           <td class="mono" style="color:var(--text-muted)"><?= $idx ?></td>
           <td>
             <strong><?= htmlspecialchars($h['name']) ?></strong>
@@ -2314,30 +2412,34 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
           <td>
             <strong><?= date('d M Y', strtotime($h['hold_start'])) ?></strong> → 
             <?= $h['hold_end'] ? date('d M Y', strtotime($h['hold_end'])) : '<span class="badge badge-yellow">Ongoing</span>' ?>
+            <span style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px"><?= $calc_days ?> days held</span>
           </td>
           <td>
             <?php if ($is_away): ?>
-              <span class="badge badge-yellow">🏖️ Away (<?= $days_away ?> days)</span>
+              <span class="badge badge-yellow">🏖️ Away (<?= $calc_days ?>d)</span>
             <?php else: ?>
-              <span class="badge badge-gray">Returned</span>
+              <span class="badge badge-gray">✓ Returned (<?= $calc_days ?>d)</span>
             <?php endif; ?>
           </td>
           <td style="color:var(--text-muted);font-size:13px"><?= htmlspecialchars($h['reason'] ?: 'Vacation') ?></td>
           <?php if(isMaster() || isAdmin()): ?>
           <td style="text-align:center;white-space:nowrap">
-            <?php if (!$h['hold_end']): ?>
-            <form method="post" style="display:inline-flex;gap:4px;align-items:center">
-              <input type="hidden" name="action" value="resume_hold">
-              <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
-              <input type="date" name="resume_date" value="<?= date('Y-m-d') ?>" class="form-control" style="font-size:11px;width:125px;padding:3px 6px">
-              <button type="submit" class="btn btn-primary btn-xs" title="Resume billing from this date"><i class="fas fa-play"></i> Resume</button>
-            </form>
-            <?php endif; ?>
-            <form method="post" style="display:inline">
-              <input type="hidden" name="action" value="delete_hold">
-              <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
-              <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this vacation hold record entirely?')"><i class="fas fa-trash"></i></button>
-            </form>
+            <div style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:center">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="openEditHoldModal(<?= $h['id'] ?>, '<?= htmlspecialchars(addslashes($h['name'])) ?>', '<?= $h['hold_start'] ?>', '<?= $h['hold_end'] ?? '' ?>', '<?= htmlspecialchars(addslashes($h['reason'] ?? '')) ?>')" title="Edit Dates or Reason"><i class="fas fa-edit"></i> Edit</button>
+              <?php if (!$h['hold_end']): ?>
+              <form method="post" style="display:inline-flex;gap:4px;align-items:center">
+                <input type="hidden" name="action" value="resume_hold">
+                <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+                <input type="date" name="resume_date" value="<?= date('Y-m-d') ?>" class="form-control" style="font-size:11px;width:125px;padding:3px 6px" title="Return date">
+                <button type="submit" class="btn btn-primary btn-xs" title="Set return date and resume"><i class="fas fa-play"></i> Resume</button>
+              </form>
+              <?php endif; ?>
+              <form method="post" style="display:inline">
+                <input type="hidden" name="action" value="delete_hold">
+                <input type="hidden" name="hold_id" value="<?= $h['id'] ?>">
+                <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this vacation hold record entirely?')"><i class="fas fa-trash"></i></button>
+              </form>
+            </div>
           </td>
           <?php endif; ?>
         </tr>
@@ -2374,7 +2476,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
     <table>
       <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Address</th><th>Billing Day</th><th>Pay By</th><th>Monthly Fee</th><th>Connected</th><th>Reminders</th><th>Actions</th></tr></thead>
       <tbody id="custTbody">
-      <?php $i=0;$custs=$db->query("SELECT *, COALESCE(reminders_enabled, 1) as reminders_enabled FROM customers WHERE status='active' ORDER BY name");
+      <?php $i=0;$custs=$db->query("SELECT *, COALESCE(reminders_enabled, 1) as reminders_enabled, (SELECT COUNT(*) FROM vacation_holds vh WHERE vh.customer_id = customers.id AND vh.hold_start <= date('now') AND (vh.hold_end IS NULL OR vh.hold_end >= date('now'))) as is_on_vacation FROM customers WHERE status='active' ORDER BY name");
       while($c=$custs->fetchArray(SQLITE3_ASSOC)){$i++;
         $rem_on = ((int)$c['reminders_enabled'] === 1);
       ?>
@@ -2384,7 +2486,7 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
             <div class="cust-top-row">
               <div class="cust-name-left">
                 <span class="cust-rank-pill">#<?= $i ?></span>
-                <strong class="cust-card-name"><?= htmlspecialchars($c['name']) ?></strong>
+                <strong class="cust-card-name"><?= htmlspecialchars($c['name']) ?></strong><?php if(!empty($c['is_on_vacation'])): ?><span class="badge badge-yellow" style="font-size:10px;padding:2px 6px;vertical-align:middle;margin-left:4px" title="Customer is currently away on vacation"><i class="fas fa-umbrella-beach"></i> Vacation</span><?php endif; ?>
                 <button type="button" 
                         class="badge-reminder-pill <?= $rem_on ? 'is-active' : 'is-muted' ?>" 
                         onclick="toggleReminders(<?= $c['id'] ?>, this)" 
@@ -3278,7 +3380,7 @@ if(collSearch){
               <div style="flex:1;min-width:0;padding-right:12px">
                 <div style="font-weight:600;font-size:14px;color:var(--text);display:flex;align-items:center;gap:6px">
                   <span>${c.name}</span>
-                  <span class="badge badge-blue" style="font-size:10px">Day ${c.billing_day||'—'}</span>${parseInt(c.reminders_enabled||1)===0 ? ' <span class="badge badge-yellow" style="font-size:10px"><i class="fas fa-bell-slash"></i> Muted</span>' : ''}
+                  <span class="badge badge-blue" style="font-size:10px">Day ${c.billing_day||'—'}</span>${parseInt(c.reminders_enabled||1)===0 ? ' <span class="badge badge-yellow" style="font-size:10px"><i class="fas fa-bell-slash"></i> Muted</span>' : ''}${parseInt(c.is_on_vacation||0) > 0 ? ' <span class="badge badge-yellow" style="font-size:10px"><i class="fas fa-umbrella-beach"></i> Vacation</span>' : ''}
                 </div>
                 <div style="font-size:12px;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
                   <span class="mono" style="color:var(--accent)"><i class="fas fa-phone-alt" style="font-size:10px;margin-right:3px"></i>${c.mobile}</span>
@@ -3323,6 +3425,16 @@ if(collSearch){
     }
   });
 }
+function openEditHoldModal(hid, name, start, end, reason) {
+  document.getElementById('edit_hold_id').value = hid;
+  document.getElementById('edit_hold_cust_name').value = name;
+  document.getElementById('edit_hold_start').value = start;
+  document.getElementById('edit_hold_end').value = end || '';
+  document.getElementById('edit_hold_reason').value = reason || 'Vacation';
+  document.getElementById('editHoldTitle').textContent = 'Edit Hold: ' + name;
+  openModal('editHoldModal');
+}
+
 function openPromiseModal(cid,name,pid){
   document.getElementById('promise_cid').value=cid;
   document.getElementById('promise_pid').value=pid;

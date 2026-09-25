@@ -108,7 +108,7 @@ if (!function_exists('getUnpaidMonths')) {
         while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
             $vholds[] = [
                 's' => new DateTime($h['hold_start']),
-                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))
+                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : null
             ];
         }
 
@@ -125,7 +125,11 @@ if (!function_exists('getUnpaidMonths')) {
             while ($d <= $mEnd) {
                 $in_hold = false;
                 foreach ($vholds as $vh) {
-                    if ($d >= $vh['s'] && $d <= $vh['e']) { $in_hold = true; break; }
+                    if ($vh['e'] === null) {
+                        if ($d >= $vh['s']) { $in_hold = true; break; }
+                    } else {
+                        if ($d >= $vh['s'] && $d <= $vh['e']) { $in_hold = true; break; }
+                    }
                 }
                 if (!$in_hold) $billable++;
                 $d->modify('+1 day');
@@ -136,7 +140,7 @@ if (!function_exists('getUnpaidMonths')) {
             $mfee = round($fee * $billable / $dim, 2);
             $p = $paid[$m] ?? null;
 
-            if ($p && ($p['settled'] == 1 || ($p['total'] >= $mfee))) {
+            if ($p && ($p['settled'] == 1 || ($p['total'] >= ($mfee - 0.05)))) {
                 continue; // Paid or settled
             }
 
@@ -152,40 +156,69 @@ if (!function_exists('getUnpaidMonths')) {
 
 if (!function_exists('getCustomerBalance')) {
     function getCustomerBalance($db, $customer_id) {
-        $cu = $db->querySingle("SELECT billing_start_date, monthly_fee, billing_day FROM customers WHERE id=" . intval($customer_id), true);
-        if (!$cu) return null;
+        $c = $db->querySingle("SELECT billing_start_date, billing_day, monthly_fee FROM customers WHERE id=" . intval($customer_id), true);
+        if (!$c) return null;
 
-        $fee = max(1, floatval($cu['monthly_fee'] ?: 30));
-        $daily_rate = round($fee / 30, 4);
-        $start = new DateTime($cu['billing_start_date'] ?: date('Y-m-01'));
-        $today = new DateTime(date('Y-m-d'));
+        $fee   = max(1, floatval($c['monthly_fee'] ?: 30));
+        $bd    = (int)($c['billing_day'] ?: 1);
+        $today = new DateTime();
+        $start = getEffectiveBillingStart($c['billing_start_date'], $bd);
 
-        // Vacation holds
-        $holds_res = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=" . intval($customer_id));
-        $holds = [];
-        while ($h = $holds_res->fetchArray(SQLITE3_ASSOC)) {
-            $holds[] = [
+        $months = [];
+        $cur    = clone $start;
+        $limit  = 60;
+        $i      = 0;
+
+        while ($cur <= $today && $i++ < $limit) {
+            $months[]   = $cur->format('Y-m');
+            $next_year  = (int)$cur->format('Y');
+            $next_month = (int)$cur->format('n') + 1;
+            if ($next_month > 12) { $next_month = 1; $next_year++; }
+            $days_in_target_month = (int)cal_days_in_month(CAL_GREGORIAN, $next_month, $next_year);
+            $safe_day = min($bd, $days_in_target_month);
+            $cur = new DateTime(sprintf('%04d-%02d-%02d', $next_year, $next_month, $safe_day));
+        }
+
+        $vholds = [];
+        $hres = $db->query("SELECT hold_start, hold_end FROM vacation_holds WHERE customer_id=" . intval($customer_id));
+        while ($h = $hres->fetchArray(SQLITE3_ASSOC)) {
+            $vholds[] = [
                 's' => new DateTime($h['hold_start']),
-                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : new DateTime(date('Y-m-d'))
+                'e' => $h['hold_end'] ? new DateTime($h['hold_end']) : null
             ];
         }
 
-        // Billable days from start date to yesterday inclusive
-        $billable_days = 0;
-        $cur = clone $start;
-        $yesterday = clone $today;
-        $yesterday->modify('-1 day');
+        $total_owed = 0;
+        $billable_days_total = 0;
 
-        while ($cur <= $yesterday) {
-            $in_hold = false;
-            foreach ($holds as $h) {
-                if ($cur >= $h['s'] && $cur <= $h['e']) { $in_hold = true; break; }
+        foreach ($months as $m) {
+            $mStart = new DateTime($m . '-01');
+            $mEnd   = clone $mStart;
+            $mEnd->modify('last day of this month');
+            $dim = (int)$mEnd->format('j');
+
+            $billable = 0;
+            $d = clone $mStart;
+            while ($d <= $mEnd) {
+                $in_hold = false;
+                foreach ($vholds as $vh) {
+                    if ($vh['e'] === null) {
+                        if ($d >= $vh['s']) { $in_hold = true; break; }
+                    } else {
+                        if ($d >= $vh['s'] && $d <= $vh['e']) { $in_hold = true; break; }
+                    }
+                }
+                if (!$in_hold) $billable++;
+                $d->modify('+1 day');
             }
-            if (!$in_hold) $billable_days++;
-            $cur->modify('+1 day');
+
+            if ($billable == 0) continue;
+            $mfee = round($fee * $billable / $dim, 2);
+            $total_owed += $mfee;
+            $billable_days_total += $billable;
         }
 
-        $total_owed = round($billable_days * $daily_rate, 2);
+        $total_owed = round($total_owed, 2);
         $total_paid = (float)$db->querySingle("SELECT COALESCE(SUM(amount), 0) FROM collections WHERE customer_id=" . intval($customer_id) . " AND amount > 0");
         $balance = round($total_paid - $total_owed, 2);
 
@@ -193,8 +226,8 @@ if (!function_exists('getCustomerBalance')) {
             'total_owed'    => $total_owed,
             'total_paid'    => $total_paid,
             'balance'       => $balance,
-            'billable_days' => $billable_days,
-            'daily_rate'    => $daily_rate,
+            'billable_days' => $billable_days_total,
+            'daily_rate'    => round($fee / 30, 4),
             'has_credit'    => $balance >= 0,
             'owes'          => abs(min(0, $balance))
         ];
