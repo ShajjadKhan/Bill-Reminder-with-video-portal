@@ -1995,7 +1995,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
 /* Desktop styles for rank pills & mobile due tags */
 @media (min-width: 769px) {
   .coll-rank-pill, .coll-mobile-due { display: none !important; }
-  .cust-rank-pill, .cust-mobile-fee, .cust-mob-wa { display: none !important; }
+  .cust-rank-pill, .cust-mobile-fee { display: none !important; }
   .mobile-only-icon { display: none !important; }
 }
 </style>
@@ -2256,7 +2256,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
             <div class="mobile-card-actions">
               <button type="button" class="btn btn-primary btn-xs" onclick="openCollectModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>')"><i class="fas fa-money-bill"></i> Collect</button>
               <button type="button" class="btn btn-xs" style="background:#f59e0b;color:#000" onclick="openPromiseModal(<?= $p['id'] ?>,'<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['promise'] ? $p['promise']['id'] : 0 ?>)"><i class="fas fa-handshake"></i> Promise</button>
-              <button type="button" class="btn btn-xs <?= $rem_on ? 'btn-whatsapp' : 'btn-secondary btn-wa-muted' ?>" id="rem-wa-btn-<?= $p['id'] ?>" data-mobile="<?= $p['mobile'] ?>" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span class="mobile-action-label"><?= $rem_on ? 'WhatsApp' : 'Muted' ?></span></button>
+              <button type="button" class="btn btn-xs <?= $rem_on ? 'btn-whatsapp' : 'btn-secondary btn-wa-muted' ?>" id="rem-wa-btn-<?= $p['id'] ?>" data-mobile="<?= $p['mobile'] ?>" onclick="sendReminderSimple('<?= $p['mobile'] ?>','<?= htmlspecialchars(addslashes($p['name'])) ?>',<?= $p['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)" title="<?= $rem_on ? 'Send WhatsApp Reminder' : 'Reminders are Muted' ?>"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span><?= $rem_on ? 'WhatsApp' : 'Muted' ?></span></button>
             </div>
           </td>
         </tr>
@@ -2566,7 +2566,8 @@ $total_holds_count = $db->querySingle("SELECT COUNT(*) FROM vacation_holds");
                       class="btn btn-whatsapp btn-xs cust-mob-wa <?= !$rem_on ? 'btn-wa-muted' : '' ?>" 
                       id="rem-wa-btn-<?= $c['id'] ?>" 
                       data-mobile="<?= $c['mobile'] ?>"
-                      onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span><?= $rem_on ? 'WA' : 'Muted' ?></span></button>
+                      onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>,this,<?= $rem_on ? 1 : 0 ?>)"
+                      title="<?= $rem_on ? 'Send WhatsApp Reminder' : 'Reminders are Muted' ?>"><i class="<?= $rem_on ? 'fab fa-whatsapp' : 'fas fa-bell-slash' ?>"></i> <span><?= $rem_on ? 'WhatsApp' : 'Muted' ?></span></button>
               <button type="button" class="btn btn-secondary btn-xs" onclick="editCust(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>','<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['building'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['apartment'] ?? '')) ?>','<?= htmlspecialchars(addslashes($c['room'] ?? '')) ?>',<?= $c['billing_day'] ?>,'<?= $c['billing_start_date'] ?>',<?= floatval($c['monthly_fee']?:30) ?>,<?= intval($c['pay_by_day'] ?: 10) ?>,<?= $rem_on ? 1 : 0 ?>)"><i class="fas fa-edit"></i> Edit</button>
               <a href="?delete_customer=<?= $c['id'] ?>&page=customers" class="btn btn-danger btn-xs" onclick="return confirm('Deactivate <?= htmlspecialchars(addslashes($c['name'])) ?>? Payment history will be kept.')"><i class="fas fa-trash"></i></a>
             </div>
@@ -2835,7 +2836,7 @@ usort($cust_rows, function($a, $b) {
             <div class="bal-card-actions">
               <button type="button" class="btn btn-secondary btn-xs bal-btn-hist" onclick="showHistory(<?= $c['id'] ?>,'<?= htmlspecialchars(addslashes($c['name'])) ?>')" title="View Billing & Transaction History"><i class="fas fa-history"></i> History</button>
               <?php if ($bal["balance"] < 0): ?>
-                <button type="button" class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp Reminder</span></button>
+                <button type="button" class="btn btn-whatsapp btn-xs bal-btn-wa" onclick="sendReminderSimple('<?= $c['mobile'] ?>','<?= htmlspecialchars(addslashes($c['name'])) ?>',<?= $c['id'] ?>)" title="Send WhatsApp reminder"><i class="fab fa-whatsapp"></i> <span>WhatsApp Reminder</span></button>
                 <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
               <?php else: ?>
                 <a href="tel:<?= $c['mobile'] ?>" class="btn btn-secondary btn-xs bal-btn-call" title="Call Customer"><i class="fas fa-phone"></i> Call</a>
@@ -3786,12 +3787,12 @@ function toggleReminders(cid, btnEl) {
           const mob = el.getAttribute('data-mobile') || '';
           if (isEnabled) {
             el.classList.remove('btn-wa-muted');
-            el.innerHTML = '<i class="fab fa-whatsapp"></i> <span class="mobile-action-label">WhatsApp</span>';
+            el.innerHTML = '<i class="fab fa-whatsapp"></i> <span>WhatsApp</span>';
             el.title = 'Send WhatsApp Reminder';
             el.onclick = function() { sendReminderSimple(mob, d.name, cid, this, 1); };
           } else {
             el.classList.add('btn-wa-muted');
-            el.innerHTML = '<i class="fas fa-bell-slash"></i> <span class="mobile-action-label">Muted</span>';
+            el.innerHTML = '<i class="fas fa-bell-slash"></i> <span>Muted</span>';
             el.title = 'Reminders are Muted';
             el.onclick = function() { sendReminderSimple(mob, d.name, cid, this, 0); };
           }
