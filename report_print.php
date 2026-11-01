@@ -1,7 +1,7 @@
 <?php
 session_start();
 if (!isset($_SESSION['user_id'])) { header('Location: portal.php'); exit; }
-$db = new SQLite3('/home/tserver/billing_reminder/bills.db');
+$db = new SQLite3(__DIR__ . '/bills.db');
 date_default_timezone_set('Asia/Riyadh');
 
 $from = $_GET['from'] ?? date('Y-m-01');
@@ -35,7 +35,7 @@ while ($r = $rows->fetchArray(SQLITE3_ASSOC)) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>CyberNet Collection Report</title>
+<title>Mahabub.Net Collection Report</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, sans-serif; color: #1a202c; background: #fff; padding: 30px; max-width: 900px; margin: 0 auto; }
@@ -66,7 +66,7 @@ while ($r = $rows->fetchArray(SQLITE3_ASSOC)) {
 
 <div class="header">
   <div>
-    <h1>📶 CyberNet ISP</h1>
+    <h1>📶 Mahabub.Net</h1>
     <div class="subtitle">Collection Report</div>
   </div>
   <div style="text-align:right;font-size:13px;color:#718096">
@@ -108,7 +108,7 @@ while ($r = $rows->fetchArray(SQLITE3_ASSOC)) {
   </tbody>
 </table>
 
-<div class="footer">CyberNet ISP — Riyadh, Saudi Arabia | Internal Report</div>
+<div class="footer">Mahabub.Net — Riyadh, Saudi Arabia | Internal Report</div>
 
 </body>
 </html>

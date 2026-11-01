@@ -2,13 +2,22 @@
 session_start();
 if (!isset($_SESSION['user_id'])) { header('Location: portal.php'); exit; }
 
-$db = new SQLite3('/home/tserver/billing_reminder/bills.db');
+$db = new SQLite3(__DIR__ . '/bills.db');
 date_default_timezone_set('Asia/Riyadh');
 
-// OpenWA config – will be updated dynamically
-$WA_BASE = "http://localhost:2785";
-$WA_KEY  = "dev-admin-key";
-$WA_SID  = "8cc17322-a9d3-4b88-89ac-d4d95fb57ff4"; // current session
+if (!function_exists('getSetting')) {
+    function getSetting($db, $k) {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key=:k LIMIT 1");
+        $stmt->bindValue(':k', $k, SQLITE3_TEXT);
+        $r = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+        return $r ? $r['value'] : null;
+    }
+}
+
+// OpenWA config - dynamic from database
+$WA_BASE = getSetting($db, 'openwa_url') ?: "http://localhost:2785";
+$WA_KEY  = getSetting($db, 'openwa_api_key') ?: "dev-admin-key";
+$WA_SID  = getSetting($db, 'openwa_session_id') ?: "ee20e4e8-e7f1-4666-be06-11cc998348c4";
 
 function waCall($method, $path, $body = null) {
     global $WA_BASE, $WA_KEY;
@@ -179,10 +188,10 @@ $dark = isset($_COOKIE['darkMode']) && $_COOKIE['darkMode'] === 'enabled';
                 <label class="form-label small text-muted">Quick Template (use {name} to personalize)</label>
                 <select class="form-select form-select-sm mb-2" onchange="if(this.value){document.getElementById('broadcastMsg').value=this.value;}">
                     <option value="">-- Choose a template or type custom message --</option>
-                    <option value="Assalamu Alaikum {name}! Your CyberNet internet bill is due soon. Please recharge on time to avoid service interruption. Movies: http://10.12.14.16:8082 | Live Sports: http://10.12.14.16:8086">📶 Bill Due Reminder</option>
+                    <option value="Assalamu Alaikum {name}! Your Mahabub.Net internet bill is due soon. Please recharge on time to avoid service interruption. Movies: http://10.12.14.16:8082 | Live Sports: http://10.12.14.16:8086">📶 Bill Due Reminder</option>
                     <option value="🎬 NEW MOVIES ADDED! Enjoy free movies & shows on our local entertainment portal: http://10.12.14.16:8082 (Connect to WiFi first)">🎬 Free Movie Portal Update</option>
                     <option value="⚽ LIVE FOOTBALL TONIGHT! Watch live sports and matches on our local player: http://10.12.14.16:8086 Enjoy!">⚽ Live Football & Sports</option>
-                    <option value="⚠️ CyberNet Network Notice: Scheduled network maintenance tonight from 2:00 AM to 3:00 AM. Thank you for your patience.">⚠️ Network Maintenance Notice</option>
+                    <option value="⚠️ Mahabub.Net Network Notice: Scheduled network maintenance tonight from 2:00 AM to 3:00 AM. Thank you for your patience.">⚠️ Network Maintenance Notice</option>
                 </select>
             </div>
             <textarea id="broadcastMsg" class="form-control mb-2" rows="4" placeholder="Type your broadcast message here. Use {name} for customer name."></textarea>
@@ -217,14 +226,52 @@ function checkStatus() {
     fetch('whatsapp_page.php?ajax=status')
         .then(r => r.json())
         .then(d => {
-            const s = (d.status || 'unknown').toUpperCase();
-            const cls = s === 'READY' || s === 'AUTHENTICATED' ? 'bg-success' :
-                        s === 'SCAN_QR_CODE' || s === 'CONNECTING' || s === 'INITIALIZING' ? 'bg-warning' : 'bg-danger';
-            badge.innerHTML = `<span class="badge ${cls}">${s}</span>`;
-            document.getElementById('statusDetails').innerHTML = d.phone ? `📱 ${d.phone} ${d.pushName ? '— ' + d.pushName : ''}` : '';
-            if (s === 'SCAN_QR_CODE' || s === 'CONNECTING' || s === 'INITIALIZING') loadQR();
-            else document.getElementById('qrContainer').innerHTML = '';
-            showResult('statusMsg', '', true);
+            const rawStatus = (d.status || 'unknown').toLowerCase();
+            let cls = 'bg-danger';
+            let label = rawStatus.toUpperCase();
+
+            if (rawStatus === 'ready' || rawStatus === 'authenticated' || rawStatus === 'connected') {
+                cls = 'bg-success';
+                label = 'CONNECTED';
+            } else if (rawStatus === 'authenticating' || rawStatus === 'initializing') {
+                cls = 'bg-info text-dark';
+                label = 'AUTHENTICATING…';
+            } else if (rawStatus === 'qr_ready' || rawStatus === 'scan_qr_code' || rawStatus === 'waiting_qr' || rawStatus === 'connecting') {
+                cls = 'bg-warning text-dark';
+                label = 'WAITING FOR SCAN';
+            } else if (rawStatus === 'disconnected' || rawStatus === 'failed') {
+                cls = 'bg-danger';
+                label = rawStatus.toUpperCase();
+            }
+
+            badge.innerHTML = `<span class="badge ${cls}">${label}</span>`;
+            document.getElementById('statusDetails').innerHTML = d.phone ? `📱 <strong>+${d.phone}</strong> ${d.pushName ? '— ' + d.pushName : ''}` : '';
+
+            if (rawStatus === 'ready' || rawStatus === 'authenticated' || rawStatus === 'connected') {
+                document.getElementById('qrContainer').innerHTML = `
+                    <div class="alert alert-success text-center py-3 my-2 shadow-sm">
+                        <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                        <h6 class="mb-1 text-success">WhatsApp is Active & Connected!</h6>
+                        <small class="text-muted">Direct messaging and payment receipts are fully operational.</small>
+                    </div>`;
+                showResult('statusMsg', '', true);
+            } else if (rawStatus === 'authenticating' || rawStatus === 'initializing') {
+                document.getElementById('qrContainer').innerHTML = `
+                    <div class="alert alert-info text-center py-3 my-2 shadow-sm">
+                        <div class="spinner-border spinner-border-sm text-info mb-2" role="status"></div>
+                        <h6 class="mb-1">QR Code Scanned!</h6>
+                        <small>Synchronizing WhatsApp Web runtime. Please wait a moment...</small>
+                    </div>`;
+                setTimeout(checkStatus, 2500);
+            } else if (rawStatus === 'qr_ready' || rawStatus === 'scan_qr_code' || rawStatus === 'waiting_qr' || rawStatus === 'connecting') {
+                loadQR();
+            } else {
+                document.getElementById('qrContainer').innerHTML = `
+                    <div class="alert alert-warning text-center py-3 my-2 shadow-sm">
+                        <p class="mb-1">Session status: <strong>${label}</strong></p>
+                        <button class="btn btn-sm btn-primary mt-2" onclick="reconnect()"><i class="fas fa-sync"></i> Reconnect WhatsApp</button>
+                    </div>`;
+            }
         })
         .catch(() => {
             badge.innerHTML = '<span class="badge bg-danger">Unreachable</span>';
@@ -237,22 +284,31 @@ function loadQR() {
         .then(r => r.json())
         .then(d => {
             if (d.qr) {
-                document.getElementById('qrContainer').innerHTML = `<img src="${d.qr}" alt="QR Code"><br><small class="text-muted">Scan with WhatsApp → Linked Devices</small>`;
+                document.getElementById('qrContainer').innerHTML = `
+                    <div class="p-2 text-center">
+                        <img src="${d.qr}" alt="QR Code" class="img-fluid border rounded shadow p-1 bg-white" style="max-width:240px;"><br>
+                        <small class="text-muted mt-2 d-inline-block"><i class="fas fa-mobile-alt"></i> Open WhatsApp → Linked Devices → Link a Device</small>
+                    </div>`;
             } else {
-                document.getElementById('qrContainer').innerHTML = '<p class="text-muted">QR not ready yet. Refresh in a few seconds.</p>';
+                document.getElementById('qrContainer').innerHTML = `
+                    <div class="p-3 text-center text-muted">
+                        <div class="spinner-border spinner-border-sm mb-2" role="status"></div><br>
+                        Generating QR Code, please wait…
+                    </div>`;
+                setTimeout(loadQR, 3000);
             }
         });
 }
 
 function reconnect() {
     if (!confirm('Restart WhatsApp session? A new QR will be generated.')) return;
-    showResult('statusMsg', 'Restarting… wait 5 seconds.', true);
+    showResult('statusMsg', 'Restarting session… please wait 5 seconds.', true);
+    document.getElementById('qrContainer').innerHTML = '<div class="p-3 text-center text-muted"><div class="spinner-border spinner-border-sm mb-2" role="status"></div><br>Restarting WhatsApp engine…</div>';
     fetch('whatsapp_page.php?ajax=reconnect')
         .then(() => {
             setTimeout(() => {
                 checkStatus();
-                setTimeout(loadQR, 2000);
-            }, 5000);
+            }, 4000);
         });
 }
 

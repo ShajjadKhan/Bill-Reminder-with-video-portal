@@ -5,7 +5,7 @@
 session_start();
 date_default_timezone_set('Asia/Riyadh');
 
-$db = new SQLite3('/home/tserver/billing_reminder/bills.db');
+$db = new SQLite3(__DIR__ . '/bills.db');
 $db->busyTimeout(10000);
 $db->exec('PRAGMA journal_mode = WAL;');
 $db->exec('PRAGMA synchronous = NORMAL;');
@@ -832,7 +832,7 @@ if ($page === 'report') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">
-<title>CyberNet ISP Billing</title>
+<title>Mahabub.Net ISP Billing</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -2006,7 +2006,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
   <div class="login-card">
     <div class="brand-row">
       <div class="ico"><i class="fas fa-wifi"></i></div>
-      <h2>CyberNet ISP</h2>
+      <h2>Mahabub.Net</h2>
       <p>Billing Management Portal</p>
     </div>
     <?php if (isset($login_error)): ?>
@@ -2031,7 +2031,7 @@ a, button, input, select, textarea, .filter-pill, .btn {
 <nav class="topbar">
   <a href="?page=dashboard" class="topbar-brand">
     <div class="brand-icon"><i class="fas fa-wifi"></i></div>
-    <div class="brand-name">Cyber<span>Net</span></div>
+    <div class="brand-name">Mahabub<span>.Net</span></div>
   </a>
   <div class="nav-tabs-wrap">
     <a href="?page=dashboard"   class="<?= $page=='dashboard'  ?'active':'' ?>"><i class="fas fa-chart-bar"></i> Dashboard</a>
@@ -2978,7 +2978,7 @@ usort($cust_rows, function($a, $b) {
   <div class="card-body">
     <div class="input-group">
       <div style="flex:1"><label class="form-label">Phone (without leading 0)</label><input type="text" id="test-phone" class="form-control" placeholder="e.g. 555xxxxxxx"></div>
-      <div style="flex:2"><label class="form-label">Message</label><input type="text" id="test-msg" class="form-control" value="Hello from CyberNet billing portal ✅"></div>
+      <div style="flex:2"><label class="form-label">Message</label><input type="text" id="test-msg" class="form-control" value="Hello from Mahabub.Net billing portal ✅"></div>
       <div style="align-self:flex-end"><button class="btn btn-whatsapp" onclick="sendTestMsg()"><i class="fab fa-whatsapp"></i> Send</button></div>
     </div>
     <div id="test-result" style="margin-top:10px;font-size:13px"></div>
@@ -2992,7 +2992,7 @@ usort($cust_rows, function($a, $b) {
   <div class="card-body">
     <div style="margin-bottom:12px">
       <label class="form-label">Message — use {name} to personalize</label>
-      <textarea id="broadcast-msg" class="form-control" rows="4" placeholder="Dear {name}, watch football live tonight! Link: http://10.12.14.16:8086/live - CyberNet"></textarea>
+      <textarea id="broadcast-msg" class="form-control" rows="4" placeholder="Dear {name}, watch football live tonight! Link: http://10.12.14.16:8086/live - Mahabub.Net"></textarea>
     </div>
     <div style="margin-bottom:14px">
       <span style="font-size:12px;color:var(--text-muted)" id="bc-count"></span>
@@ -3832,7 +3832,7 @@ function sendReminderSimple(mobile,name,custId,btnEl,remindersEnabled){
     showToast('❌ Network error - check connection', 'error');
   });
 }
-function checkWaStatus(){const el=document.getElementById('wa-status-display');if(!el)return;el.innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Checking…</div>';fetch('portal.php?action=wa_status').then(r=>r.json()).then(d=>{const s=d.session;const status=s?.status||'unknown';const dotClass=status==='CONNECTED'||status==='ready'?'connected':(status==='WAITING_QR'?'waiting':'disconnected');el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="wa-status-dot ${dotClass}"></span><strong style="font-size:16px">${status}</strong></div><div style="font-size:12px;color:var(--text-muted)">${s?.name?'<div>Session name: '+s.name+'</div>':''}${s?.phoneNumber?'<div>Phone: '+s.phoneNumber+'</div>':''}</div>`;}).catch(()=>{el.innerHTML='<div style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Could not reach OpenWA</div>';});}
+function checkWaStatus(){const el=document.getElementById('wa-status-display');if(!el)return;el.innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Checking…</div>';fetch('portal.php?action=wa_status').then(r=>r.json()).then(d=>{const s=d.session;const status=(s?.status||'unknown').toLowerCase();const dotClass=(status==='connected'||status==='ready'||status==='authenticated')?'connected':(status==='waiting_qr'||status==='qr_ready'||status==='scan_qr_code'||status==='authenticating'||status==='initializing')?'waiting':'disconnected';const phone=s?.phone||s?.phoneNumber||'';el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="wa-status-dot ${dotClass}"></span><strong style="font-size:16px">${status.toUpperCase()}</strong></div><div style="font-size:12px;color:var(--text-muted)">${s?.name?'<div>Session: '+s.name+'</div>':''}${phone?'<div>Phone: +'+phone+' '+(s?.pushName?('('+s.pushName+')'):'')+'</div>':''}</div>`;}).catch(()=>{el.innerHTML='<div style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Could not reach OpenWA</div>';});}
 function fetchQR(){document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Fetching QR…</div>';fetch('portal.php?action=wa_qr').then(r=>r.json()).then(d=>{if(d.qrCode){document.getElementById('qr-container').innerHTML=`<div><img src="${d.qrCode}" style="max-width:240px;border-radius:8px"><p style="font-size:12px;color:var(--text-muted);margin-top:8px">Scan with WhatsApp</p></div>`;}else{document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)">No QR available. Session may already be connected, or try Reconnect first.</div>';}}).catch(()=>{document.getElementById('qr-container').innerHTML='<div style="color:var(--danger)">Error fetching QR</div>';});}
 function doReconnect(){if(!confirm('This will disconnect the current WhatsApp session and create a new one. Proceed?'))return;const logEl=document.getElementById('wa-log');logEl.innerHTML='<i class="fas fa-spinner fa-spin"></i> Reconnecting…';document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Please wait…</div>';fetch('portal.php?action=wa_reconnect',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){logEl.innerHTML=d.log.map(l=>`<div>✓ ${l}</div>`).join('');document.getElementById('session-id-display').textContent=d.new_session_id;setTimeout(fetchQR,2000);setTimeout(checkWaStatus,4000);}else{logEl.innerHTML='<span style="color:var(--danger)">Error: '+(d.error||'Unknown')+'</span>';}}).catch(()=>{logEl.innerHTML='<span style="color:var(--danger)">Network error</span>';});}
 function sendTestMsg(){const phone=document.getElementById('test-phone').value.trim();const msg=document.getElementById('test-msg').value.trim();const res=document.getElementById('test-result');if(!phone||!msg){res.innerHTML='<span style="color:var(--danger)">Enter phone and message</span>';return;}res.innerHTML='<i class="fas fa-spinner fa-spin"></i> Sending…';sendWaMsg(phone,msg).then(r=>r.json()).then(d=>{res.innerHTML=`<span style="color:var(--success)">✅ Sent!</span>`;}).catch(e=>{res.innerHTML=`<span style="color:var(--danger)">❌ Error: ${e}</span>`;});}

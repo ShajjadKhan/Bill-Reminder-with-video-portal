@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// CyberNet ISP — Unified Billing & Accounting Core Logic
+// Mahabub.Net — Unified Billing & Accounting Core Logic
 // ============================================================
 
 if (!function_exists('getSetting')) {
@@ -423,7 +423,7 @@ if (!function_exists("buildReminderMsg")) {
         $s1n = getSetting($db, "support_1_name"); $s1p = getSetting($db, "support_1_phone");
         $s2n = getSetting($db, "support_2_name"); $s2p = getSetting($db, "support_2_phone");
 
-        $message = "📶 CYBERNET ACCOUNT STATUS
+        $message = "📶 MAHABUB.NET ACCOUNT STATUS
 ";
         $message .= "Assalamu Alaikum {$customer_name}!
 
