@@ -56,9 +56,9 @@ if (!in_array('is_settled', $existing2)) $db->exec("ALTER TABLE collections ADD 
 
 // Default settings
 $defaults = [
-    'openwa_url'       => 'http://10.12.14.16:2785',
+    'openwa_url'       => 'http://localhost:2785',
     'openwa_api_key'   => 'dev-admin-key',
-    'openwa_session_id'=> '8cc17322-a9d3-4b88-89ac-d4d95fb57ff4',
+    'openwa_session_id'=> 'ee20e4e8-e7f1-4666-be06-11cc998348c4',
     'movie_server'     => 'http://10.12.14.16:8082',
     'support_1_name'   => 'Shajjad Khan',
     'support_1_phone'  => '+966597595059',
@@ -274,37 +274,79 @@ if ($action === 'wa_reconnect' && isLoggedIn() && isMaster()) {
     header('Content-Type: application/json');
     $base = getSetting($db,'openwa_url');
     $key  = getSetting($db,'openwa_api_key');
-    $old  = getSetting($db,'openwa_session_id');
+    $sid  = getSetting($db,'openwa_session_id');
+    $force_new = isset($_GET['new']) && $_GET['new'] === '1';
     $log  = [];
 
-    $ch = curl_init("$base/api/sessions/$old");
-    curl_setopt_array($ch,[CURLOPT_CUSTOMREQUEST=>'DELETE',CURLOPT_RETURNTRANSFER=>true,
-        CURLOPT_TIMEOUT=>8,CURLOPT_HTTPHEADER=>["X-API-Key: $key"]]);
-    curl_exec($ch); curl_close($ch);
-    $log[] = 'Old session deleted';
+    if ($force_new) {
+        $ch = curl_init("$base/api/sessions/$sid");
+        curl_setopt_array($ch,[CURLOPT_CUSTOMREQUEST=>'DELETE',CURLOPT_RETURNTRANSFER=>true,
+            CURLOPT_TIMEOUT=>8,CURLOPT_HTTPHEADER=>["X-API-Key: $key"]]);
+        curl_exec($ch); curl_close($ch);
+        $log[] = 'Old session deleted';
 
-    $ch = curl_init("$base/api/sessions");
-    curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,
-        CURLOPT_HTTPHEADER=>["Content-Type: application/json","X-API-Key: $key"],
-        CURLOPT_POSTFIELDS=>json_encode(['name'=>'billing-bot'])]);
-    $r = curl_exec($ch); curl_close($ch);
-    $created = json_decode($r, true);
-    $new_id  = $created['id'] ?? null;
-    if (!$new_id) { echo json_encode(['error'=>'Could not create session','raw'=>$r]); exit; }
-    $log[] = "New session created: $new_id";
+        $ch = curl_init("$base/api/sessions");
+        curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,
+            CURLOPT_HTTPHEADER=>["Content-Type: application/json","X-API-Key: $key"],
+            CURLOPT_POSTFIELDS=>json_encode(['name'=>'billing-bot'])]);
+        $r = curl_exec($ch); curl_close($ch);
+        $created = json_decode($r, true);
+        $new_id  = $created['id'] ?? null;
+        if (!$new_id) { echo json_encode(['error'=>'Could not create session','raw'=>$r]); exit; }
+        $sid = $new_id;
+        $log[] = "New session created: $sid";
+    } else {
+        $ch = curl_init("$base/api/sessions/$sid/stop");
+        curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,
+            CURLOPT_TIMEOUT=>8,CURLOPT_HTTPHEADER=>["X-API-Key: $key"]]);
+        curl_exec($ch); curl_close($ch);
+        $log[] = 'Session stopped';
+        sleep(1);
+    }
 
-    $ch = curl_init("$base/api/sessions/$new_id/start");
+    $ch = curl_init("$base/api/sessions/$sid/start");
     curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,
         CURLOPT_HTTPHEADER=>["Content-Type: application/json","X-API-Key: $key"],
         CURLOPT_POSTFIELDS=>'{}']);
     curl_exec($ch); curl_close($ch);
     $log[] = 'Session started';
 
-    setSetting($db,'openwa_session_id',$new_id);
-    logAction($db,$_SESSION['user_id'],'WA_RECONNECT',"New session: $new_id");
+    setSetting($db,'openwa_session_id',$sid);
+    logAction($db,$_SESSION['user_id'],'WA_RECONNECT',"Session restarted: $sid");
     $log[] = 'Session ID saved to database';
 
-    echo json_encode(['success'=>true,'new_session_id'=>$new_id,'log'=>$log]);
+    echo json_encode(['success'=>true,'new_session_id'=>$sid,'log'=>$log]);
+    exit;
+}
+
+if ($action === 'wa_send_test' && isLoggedIn()) {
+    header('Content-Type: application/json');
+    $base = getSetting($db,'openwa_url');
+    $key  = getSetting($db,'openwa_api_key');
+    $sid  = getSetting($db,'openwa_session_id');
+    $mobile = preg_replace('/[^0-9]/', '', $_POST['mobile'] ?? '');
+    if (substr($mobile, 0, 1) === '0') $mobile = '966' . ltrim($mobile, '0');
+    elseif (!str_starts_with($mobile, '966') && strlen($mobile) === 9) $mobile = '966' . $mobile;
+    $text = trim($_POST['message'] ?? '');
+    if (!$mobile || !$text) {
+        echo json_encode(['success' => false, 'error' => 'Mobile number and message required']);
+        exit;
+    }
+    $ch = curl_init("$base/api/sessions/$sid/messages/send-text");
+    $payload = json_encode(['chatId' => $mobile . '@c.us', 'text' => $text]);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_HTTPHEADER => ["Content-Type: application/json", "X-API-Key: $key"],
+        CURLOPT_POSTFIELDS => $payload
+    ]);
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $data = $res ? json_decode($res, true) : null;
+    $ok = ($code >= 200 && $code < 300) || isset($data['messageId']);
+    echo json_encode(['success' => $ok, 'http_code' => $code, 'data' => $data]);
     exit;
 }
 
@@ -3039,19 +3081,14 @@ function startBroadcast(){
     document.getElementById('bc-bar').style.width=pct+'%';
     document.getElementById('bc-status').textContent='Sending to '+c.name+' ('+idx+'/'+customers.length+')...';
     var text=msg.replace(/{name}/g,c.name);
-    var phone=c.mobile.replace(/^0+/,'');
-    if(!/^966/.test(phone))phone='966'+phone;
-    var chatId=phone+'@c.us';
-    fetch(cfg.url+'/api/sessions/'+cfg.sid+'/messages/send-text',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-API-Key':cfg.key},
-      body:JSON.stringify({chatId:chatId,text:text})
-    }).then(function(r){
-      if(r.ok){sent++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--success)">OK '+c.name+'</div>';}
-      else{failed++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">FAIL '+c.name+'</div>';}
+    sendWaMsg(c.mobile, text).then(function(r){
+      return r.json();
+    }).then(function(d){
+      if(d.success){sent++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--success)">✓ '+c.name+'</div>';}
+      else{failed++;document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">✗ '+c.name+' '+(d.error||'')+'</div>';}
     }).catch(function(){
       failed++;
-      document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">ERR '+c.name+'</div>';
+      document.getElementById('bc-log').innerHTML+='<div style="color:var(--danger)">✗ '+c.name+'</div>';
     }).finally(function(){setTimeout(sendNext,1200);});
   }
   sendNext();
@@ -3509,7 +3546,12 @@ function showHistory(cid,name){
     .catch(()=>{document.getElementById('histContent').innerHTML='<div style="padding:20px;text-align:center;color:var(--danger)">Failed to load payment history.</div>';});
 }
 function getWaConfig(){return{url:'<?= getSetting($db,"openwa_url") ?>',key:'<?= getSetting($db,"openwa_api_key") ?>',sid:document.getElementById('session-id-display')?.textContent||'<?= getSetting($db,"openwa_session_id") ?>'};}
-function sendWaMsg(mobile,message){const cfg=getWaConfig();let phone=mobile.replace(/^0+/,'');if(!/^966/.test(phone))phone='966'+phone;const chatId=phone+'@c.us';const url=`${cfg.url}/api/sessions/${cfg.sid}/messages/send-text`;return fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':cfg.key},body:JSON.stringify({chatId,text:message})});}
+function sendWaMsg(mobile,message){
+  const fd = new FormData();
+  fd.append('mobile', mobile);
+  fd.append('message', message);
+  return fetch('portal.php?action=wa_send_test', {method:'POST', body:fd});
+}
 
 
 let movieUploadAbortController = null;
@@ -3835,8 +3877,8 @@ function sendReminderSimple(mobile,name,custId,btnEl,remindersEnabled){
 }
 function checkWaStatus(){const el=document.getElementById('wa-status-display');if(!el)return;el.innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Checking…</div>';fetch('portal.php?action=wa_status').then(r=>r.json()).then(d=>{const s=d.session;const status=(s?.status||'unknown').toLowerCase();const dotClass=(status==='connected'||status==='ready'||status==='authenticated')?'connected':(status==='waiting_qr'||status==='qr_ready'||status==='scan_qr_code'||status==='authenticating'||status==='initializing')?'waiting':'disconnected';const phone=s?.phone||s?.phoneNumber||'';el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="wa-status-dot ${dotClass}"></span><strong style="font-size:16px">${status.toUpperCase()}</strong></div><div style="font-size:12px;color:var(--text-muted)">${s?.name?'<div>Session: '+s.name+'</div>':''}${phone?'<div>Phone: +'+phone+' '+(s?.pushName?('('+s.pushName+')'):'')+'</div>':''}</div>`;}).catch(()=>{el.innerHTML='<div style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> Could not reach OpenWA</div>';});}
 function fetchQR(){document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Fetching QR…</div>';fetch('portal.php?action=wa_qr').then(r=>r.json()).then(d=>{if(d.qrCode){document.getElementById('qr-container').innerHTML=`<div><img src="${d.qrCode}" style="max-width:240px;border-radius:8px"><p style="font-size:12px;color:var(--text-muted);margin-top:8px">Scan with WhatsApp</p></div>`;}else{document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)">No QR available. Session may already be connected, or try Reconnect first.</div>';}}).catch(()=>{document.getElementById('qr-container').innerHTML='<div style="color:var(--danger)">Error fetching QR</div>';});}
-function doReconnect(){if(!confirm('This will disconnect the current WhatsApp session and create a new one. Proceed?'))return;const logEl=document.getElementById('wa-log');logEl.innerHTML='<i class="fas fa-spinner fa-spin"></i> Reconnecting…';document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Please wait…</div>';fetch('portal.php?action=wa_reconnect',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){logEl.innerHTML=d.log.map(l=>`<div>✓ ${l}</div>`).join('');document.getElementById('session-id-display').textContent=d.new_session_id;setTimeout(fetchQR,2000);setTimeout(checkWaStatus,4000);}else{logEl.innerHTML='<span style="color:var(--danger)">Error: '+(d.error||'Unknown')+'</span>';}}).catch(()=>{logEl.innerHTML='<span style="color:var(--danger)">Network error</span>';});}
-function sendTestMsg(){const phone=document.getElementById('test-phone').value.trim();const msg=document.getElementById('test-msg').value.trim();const res=document.getElementById('test-result');if(!phone||!msg){res.innerHTML='<span style="color:var(--danger)">Enter phone and message</span>';return;}res.innerHTML='<i class="fas fa-spinner fa-spin"></i> Sending…';sendWaMsg(phone,msg).then(r=>r.json()).then(d=>{res.innerHTML=`<span style="color:var(--success)">✅ Sent!</span>`;}).catch(e=>{res.innerHTML=`<span style="color:var(--danger)">❌ Error: ${e}</span>`;});}
+function doReconnect(){if(!confirm('This will refresh the current WhatsApp connection. Proceed?'))return;const logEl=document.getElementById('wa-log');logEl.innerHTML='<i class="fas fa-spinner fa-spin"></i> Reconnecting…';document.getElementById('qr-container').innerHTML='<div style="color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Please wait…</div>';fetch('portal.php?action=wa_reconnect',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.success){logEl.innerHTML=d.log.map(l=>`<div>✓ ${l}</div>`).join('');document.getElementById('session-id-display').textContent=d.new_session_id;setTimeout(checkWaStatus,2000);}else{logEl.innerHTML='<span style="color:var(--danger)">Error: '+(d.error||'Unknown')+'</span>';}}).catch(()=>{logEl.innerHTML='<span style="color:var(--danger)">Network error</span>';});}
+function sendTestMsg(){const phone=document.getElementById('test-phone').value.trim();const msg=document.getElementById('test-msg').value.trim();const res=document.getElementById('test-result');if(!phone||!msg){res.innerHTML='<span style="color:var(--danger)">Enter phone and message</span>';return;}res.innerHTML='<i class="fas fa-spinner fa-spin"></i> Sending…';sendWaMsg(phone,msg).then(r=>r.json()).then(d=>{if(d.success){res.innerHTML=`<span style="color:var(--success)">✅ Sent!</span>`;}else{res.innerHTML=`<span style="color:var(--danger)">❌ Failed: `+(d.data?.message||d.error||'Send failed')+`</span>`;}}).catch(e=>{res.innerHTML=`<span style="color:var(--danger)">❌ Error: ${e}</span>`;});}
 if(document.getElementById('wa-status-display'))checkWaStatus();
 function editMaster(id,fn,un){document.getElementById('master_id').value=id;document.getElementById('master_fn').value=fn;document.getElementById('master_un').value=un;openModal('editMasterModal');}
 function resetPass(id){document.getElementById('reset_uid').value=id;openModal('resetPassModal');}

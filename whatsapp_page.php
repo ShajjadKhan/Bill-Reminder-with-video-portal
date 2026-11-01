@@ -43,6 +43,10 @@ $ajax = $_GET['ajax'] ?? '';
 if ($ajax === 'status') {
     header('Content-Type: application/json');
     $r = waCall('GET', "/api/sessions/$WA_SID");
+    if (isset($r['statusCode']) && $r['statusCode'] === 429) {
+        echo json_encode(['status' => 'throttled', 'phone' => null, 'pushName' => null]);
+        exit;
+    }
     echo json_encode(['status' => $r['status'] ?? 'unknown', 'phone' => $r['phone'] ?? null, 'pushName' => $r['pushName'] ?? null]);
     exit;
 }
@@ -262,7 +266,11 @@ function checkStatus() {
                         <h6 class="mb-1">QR Code Scanned!</h6>
                         <small>Synchronizing WhatsApp Web runtime. Please wait a moment...</small>
                     </div>`;
-                setTimeout(checkStatus, 2500);
+                setTimeout(checkStatus, 6000);
+            } else if (rawStatus === 'throttled') {
+                // Temporary API rate-limit, keep previous display and back off
+                setTimeout(checkStatus, 8000);
+                return;
             } else if (rawStatus === 'qr_ready' || rawStatus === 'scan_qr_code' || rawStatus === 'waiting_qr' || rawStatus === 'connecting') {
                 loadQR();
             } else {
