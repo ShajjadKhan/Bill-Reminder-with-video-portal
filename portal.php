@@ -2,7 +2,7 @@
 // ============================================================
 // ISP BILLING PORTAL — v2.0  (fixed & polished)
 // ============================================================
-session_start();
+require_once __DIR__ . '/session_boot.php';
 date_default_timezone_set('Asia/Riyadh');
 
 $db = new SQLite3(__DIR__ . '/bills.db');
@@ -353,12 +353,17 @@ if ($action === 'wa_send_test' && isLoggedIn()) {
 // ============================================================
 // AUTH
 // ============================================================
-if (isset($_GET['logout'])) { session_destroy(); header('Location: portal.php'); exit; }
+if (isset($_GET['logout'])) {
+    clearRememberMeCookie($db);
+    session_destroy();
+    header('Location: portal.php'); exit;
+}
 
 if ($action === 'login') {
     $u = $db->querySingle("SELECT * FROM users WHERE username='".SQLite3::escapeString($_POST['username'])."'",true);
     if ($u && password_verify($_POST['password'],$u['password'])) {
         $_SESSION = ['user_id'=>$u['id'],'role'=>$u['role'],'fullname'=>$u['fullname'],'username'=>$u['username']];
+        issueRememberMeCookie($db, $u['id']);
         header('Location: portal.php'); exit;
     }
     $login_error = "Invalid username or password";
