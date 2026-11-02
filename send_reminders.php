@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/billing_logic.php';
 
-$db = new SQLite3('/home/tserver/billing_reminder/bills.db');
+$db = new SQLite3(__DIR__ . '/bills.db');
 $db->busyTimeout(10000);
 date_default_timezone_set('Asia/Riyadh');
 

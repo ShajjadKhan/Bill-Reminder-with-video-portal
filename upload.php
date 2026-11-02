@@ -1,16 +1,19 @@
 <?php
-session_start();
-// if (!isset($_SESSION["user_id"])) {
+require_once __DIR__ . '/session_boot.php';
+if (!isset($_SESSION["user_id"])) {
     http_response_code(403);
     die("Access denied");
 }
 
-$db = new SQLite3('bills.db');
-$upload_dir = '/mnt/bigstorage/files/';
+$db = new SQLite3(__DIR__ . '/bills.db');
+$upload_dir = __DIR__ . '/uploads/';
+if (!is_dir($upload_dir)) {
+    mkdir($upload_dir, 0755, true);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload_file'])) {
-    $title = SQLite3::escapeString($_POST['title']);
-    $description = SQLite3::escapeString($_POST['description']);
+    $title = SQLite3::escapeString($_POST['title'] ?? '');
+    $description = SQLite3::escapeString($_POST['description'] ?? '');
     $file = $_FILES['upload_file'];
     $original_name = $file['name'];
     $size = $file['size'];

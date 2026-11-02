@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-// CyberNet ISP — Unified Billing & Accounting Core Logic
+// Mahabub.Net — Unified Billing & Accounting Core Logic
 // ============================================================
 
 if (!function_exists('getSetting')) {
@@ -26,7 +26,7 @@ if (!function_exists('sendWhatsAppMessage')) {
     function sendWhatsAppMessage($db, $mobile, $message) {
         $base = getSetting($db, 'openwa_url') ?: "http://localhost:2785";
         $key  = getSetting($db, 'openwa_api_key') ?: "dev-admin-key";
-        $sid  = getSetting($db, 'openwa_session_id') ?: "8cc17322-a9d3-4b88-89ac-d4d95fb57ff4";
+        $sid  = getSetting($db, 'openwa_session_id') ?: "ee20e4e8-e7f1-4666-be06-11cc998348c4";
         if (!$sid || !$base) return false;
 
         $phone = preg_replace('/^0+/', '', trim($mobile));
@@ -423,7 +423,7 @@ if (!function_exists("buildReminderMsg")) {
         $s1n = getSetting($db, "support_1_name"); $s1p = getSetting($db, "support_1_phone");
         $s2n = getSetting($db, "support_2_name"); $s2p = getSetting($db, "support_2_phone");
 
-        $message = "📶 CYBERNET ACCOUNT STATUS
+        $message = "📶 MAHABUB.NET ACCOUNT STATUS
 ";
         $message .= "Assalamu Alaikum {$customer_name}!
 
